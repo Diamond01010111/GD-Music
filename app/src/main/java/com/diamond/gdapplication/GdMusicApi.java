@@ -133,6 +133,9 @@ public class GdMusicApi {
                         JSONObject obj = parseObject(body);
 
                         track.audioUrl = obj.optString("url", "");
+                        if (track.audioUrl != null && !track.audioUrl.isEmpty() && !track.audioUrl.equals("null")) {
+                            track.audioUrlCachedAt = System.currentTimeMillis();
+                        }
 
                         callback.onSuccess(track);
 

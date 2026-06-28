@@ -1,0 +1,352 @@
+package com.diamond.gdapplication;
+
+import android.os.Handler;
+import android.os.Looper;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+public class MusicController {
+
+    private enum PlayMode {
+        LIST_LOOP,
+        SINGLE_LOOP,
+        RANDOM
+    }
+
+    public interface Listener {
+        void onStatusChanged(String message);
+        void onStatusAppend(String message);
+        void onModeChanged(String modeName);
+    }
+
+    private final GdMusicApi api;
+    private final PlayerManager playerManager;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private final List<Track> playlist = new ArrayList<>();
+    private final Random random = new Random();
+
+    private int currentIndex = -1;
+    private PlayMode playMode = PlayMode.LIST_LOOP;
+
+    private Listener listener;
+
+    public MusicController(GdMusicApi api, PlayerManager playerManager) {
+        this.api = api;
+        this.playerManager = playerManager;
+
+        this.playerManager.setPlaybackEventListener(() -> {
+            mainHandler.post(this::handleTrackEnded);
+        });
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
+    public void searchAndPlayFirst(String keyword) {
+        setStatus("正在搜索：" + keyword);
+
+        api.searchTracks(keyword, new GdMusicApi.SearchCallback() {
+            @Override
+            public void onSuccess(List<Track> tracks) {
+                if (tracks == null || tracks.isEmpty()) {
+                    setStatus("没有搜索结果");
+                    return;
+                }
+
+                playlist.clear();
+                playlist.addAll(tracks);
+                currentIndex = 0;
+
+                Track firstTrack = playlist.get(currentIndex);
+
+                setStatus(
+                        "搜索成功，共 " + playlist.size() + " 首\n\n"
+                                + "准备播放第一首：\n"
+                                + firstTrack.name + "\n"
+                                + firstTrack.artist + "\n"
+                                + firstTrack.album + "\n\n"
+                                + "trackId = " + firstTrack.id + "\n"
+                                + "picId = " + firstTrack.picId + "\n"
+                                + "lyricId = " + firstTrack.lyricId + "\n\n"
+                                + "正在获取播放 URL..."
+                );
+
+                playTrackAtCurrentIndex();
+            }
+
+            @Override
+            public void onError(Exception e) {
+                setStatus("搜索失败：\n" + e.getMessage());
+            }
+        });
+    }
+
+    public void playNext() {
+        if (playlist.isEmpty()) {
+            setStatus("播放队列为空，请先搜索歌曲");
+            return;
+        }
+
+        if (playMode == PlayMode.RANDOM) {
+            playRandomTrack();
+            return;
+        }
+
+        currentIndex++;
+
+        if (currentIndex >= playlist.size()) {
+            currentIndex = 0;
+        }
+
+        playTrackAtCurrentIndex();
+    }
+
+    public void playPrevious() {
+        if (playlist.isEmpty()) {
+            setStatus("播放队列为空，请先搜索歌曲");
+            return;
+        }
+
+        currentIndex--;
+
+        if (currentIndex < 0) {
+            currentIndex = playlist.size() - 1;
+        }
+
+        playTrackAtCurrentIndex();
+    }
+
+    public void playOrPause() {
+        playerManager.playOrPause();
+
+        if (playerManager.isPlaying()) {
+            appendStatus("\n\n继续播放");
+        } else {
+            appendStatus("\n\n已暂停");
+        }
+    }
+
+    public void switchPlayMode() {
+        if (playMode == PlayMode.LIST_LOOP) {
+            playMode = PlayMode.SINGLE_LOOP;
+        } else if (playMode == PlayMode.SINGLE_LOOP) {
+            playMode = PlayMode.RANDOM;
+        } else {
+            playMode = PlayMode.LIST_LOOP;
+        }
+
+        if (listener != null) {
+            mainHandler.post(() -> {
+                listener.onModeChanged(getPlayModeName());
+                listener.onStatusAppend("\n\n已切换播放模式：" + getPlayModeName());
+            });
+        }
+    }
+
+    private void playTrackAtCurrentIndex() {
+        if (playlist.isEmpty()) {
+            setStatus("播放队列为空");
+            return;
+        }
+
+        if (currentIndex < 0 || currentIndex >= playlist.size()) {
+            setStatus("currentIndex 不合法：" + currentIndex);
+            return;
+        }
+
+        Track track = playlist.get(currentIndex);
+
+        if (hasValidCachedAudioUrl(track)) {
+            mainHandler.post(() -> {
+                setStatusDirect(
+                        "使用缓存播放：\n"
+                                + track.name + "\n"
+                                + track.artist + "\n"
+                                + track.album + "\n\n"
+                                + "当前序号：" + (currentIndex + 1) + " / " + playlist.size() + "\n"
+                                + "播放模式：" + getPlayModeName()
+                );
+
+                playerManager.playTrack(track);
+            });
+
+            return;
+        }
+
+        setStatus(
+                "当前播放队列：" + playlist.size() + " 首\n"
+                        + "当前序号：" + (currentIndex + 1) + " / " + playlist.size() + "\n"
+                        + "播放模式：" + getPlayModeName() + "\n\n"
+                        + "正在获取播放 URL：\n"
+                        + track.name + "\n"
+                        + track.artist + "\n"
+                        + track.album + "\n\n"
+                        + "trackId = " + track.id + "\n"
+                        + "picId = " + track.picId + "\n"
+                        + "lyricId = " + track.lyricId
+        );
+
+        api.getAudioUrl(track, new GdMusicApi.TrackCallback() {
+            @Override
+            public void onSuccess(Track updatedTrack) {
+                if (updatedTrack.audioUrl == null
+                        || updatedTrack.audioUrl.isEmpty()
+                        || updatedTrack.audioUrl.equals("null")) {
+                    setStatus(
+                            "没有拿到播放 URL：\n"
+                                    + updatedTrack.name + "\n"
+                                    + updatedTrack.artist
+                    );
+                    return;
+                }
+
+                mainHandler.post(() -> {
+                    setStatusDirect(
+                            "正在播放：\n"
+                                    + updatedTrack.name + "\n"
+                                    + updatedTrack.artist + "\n"
+                                    + updatedTrack.album + "\n\n"
+                                    + "当前序号：" + (currentIndex + 1) + " / " + playlist.size() + "\n"
+                                    + "播放模式：" + getPlayModeName() + "\n\n"
+                                    + "trackId = " + updatedTrack.id + "\n"
+                                    + "picId = " + updatedTrack.picId + "\n"
+                                    + "lyricId = " + updatedTrack.lyricId + "\n\n"
+                                    + "audioUrl:\n"
+                                    + updatedTrack.audioUrl
+                    );
+
+                    playerManager.playTrack(updatedTrack);
+                });
+
+                requestPicAndLyric(updatedTrack);
+            }
+
+            @Override
+            public void onError(Exception e) {
+                setStatus("获取播放 URL 失败：\n" + e.getMessage());
+            }
+        });
+    }
+
+    private void requestPicAndLyric(Track track) {
+        api.getPicUrl(track, new GdMusicApi.TrackCallback() {
+            @Override
+            public void onSuccess(Track updatedTrack) {
+                if (updatedTrack.picUrl != null && !updatedTrack.picUrl.isEmpty()) {
+                    appendStatus("\n\n专辑图 URL:\n" + updatedTrack.picUrl);
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                appendStatus("\n\n获取专辑图失败：" + e.getMessage());
+            }
+        });
+
+        api.getLyric(track, new GdMusicApi.TrackCallback() {
+            @Override
+            public void onSuccess(Track updatedTrack) {
+                int lyricLength = updatedTrack.lyric == null ? 0 : updatedTrack.lyric.length();
+                int translatedLength = updatedTrack.translatedLyric == null ? 0 : updatedTrack.translatedLyric.length();
+
+                appendStatus("\n\n歌词已获取");
+                appendStatus("\n原文歌词长度：" + lyricLength);
+                appendStatus("\n翻译歌词长度：" + translatedLength);
+            }
+
+            @Override
+            public void onError(Exception e) {
+                appendStatus("\n\n获取歌词失败：" + e.getMessage());
+            }
+        });
+    }
+
+    private void handleTrackEnded() {
+        if (playlist.isEmpty() || currentIndex < 0 || currentIndex >= playlist.size()) {
+            return;
+        }
+
+        if (playMode == PlayMode.SINGLE_LOOP) {
+            playerManager.replayCurrentTrack();
+            return;
+        }
+
+        if (playMode == PlayMode.RANDOM) {
+            playRandomTrack();
+            return;
+        }
+
+        currentIndex++;
+
+        if (currentIndex >= playlist.size()) {
+            currentIndex = 0;
+        }
+
+        playTrackAtCurrentIndex();
+    }
+
+    private void playRandomTrack() {
+        if (playlist.isEmpty()) {
+            setStatus("播放队列为空");
+            return;
+        }
+
+        if (playlist.size() == 1) {
+            currentIndex = 0;
+            playTrackAtCurrentIndex();
+            return;
+        }
+
+        int nextIndex;
+
+        do {
+            nextIndex = random.nextInt(playlist.size());
+        } while (nextIndex == currentIndex);
+
+        currentIndex = nextIndex;
+        playTrackAtCurrentIndex();
+    }
+
+    private boolean hasValidCachedAudioUrl(Track track) {
+        if (track.audioUrl == null || track.audioUrl.isEmpty() || track.audioUrl.equals("null")) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        long maxAge = 30 * 60 * 1000; // 30 分钟
+
+        return now - track.audioUrlCachedAt < maxAge;
+    }
+
+    private String getPlayModeName() {
+        if (playMode == PlayMode.SINGLE_LOOP) {
+            return "单曲循环";
+        }
+
+        if (playMode == PlayMode.RANDOM) {
+            return "随机播放";
+        }
+
+        return "自动循环";
+    }
+
+    private void setStatus(String message) {
+        mainHandler.post(() -> setStatusDirect(message));
+    }
+
+    private void setStatusDirect(String message) {
+        if (listener != null) {
+            listener.onStatusChanged(message);
+        }
+    }
+
+    private void appendStatus(String message) {
+        if (listener != null) {
+            mainHandler.post(() -> listener.onStatusAppend(message));
+        }
+    }
+}

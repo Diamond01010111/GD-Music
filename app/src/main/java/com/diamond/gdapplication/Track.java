@@ -10,6 +10,7 @@ public class Track {
     public String lyricId;
 
     public String audioUrl;
+    public long audioUrlCachedAt = 0;
     public String picUrl;
     public String lyric;
     public String translatedLyric;
