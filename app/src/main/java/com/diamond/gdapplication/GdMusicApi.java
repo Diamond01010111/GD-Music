@@ -39,7 +39,11 @@ public class GdMusicApi {
                     + "&count=5"
                     + "&pages=1";
 
-            Request request = new Request.Builder().url(url).get().build();
+            Request request = new Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .get()
+                    .build();
 
             client.newCall(request).enqueue(new Callback() {
                 @Override
@@ -51,7 +55,27 @@ public class GdMusicApi {
                 public void onResponse(Call call, Response response) throws IOException {
                     try {
                         String body = response.body() != null ? response.body().string() : "";
-                        JSONArray arr = new JSONArray(body);
+
+                        if (!response.isSuccessful()) {
+                            callback.onError(new Exception(
+                                    "HTTP 错误：" + response.code()
+                                            + "\n\n返回内容：\n"
+                                            + body.substring(0, Math.min(body.length(), 300))
+                            ));
+                            return;
+                        }
+
+                        String trimmed = body.trim();
+
+                        if (!trimmed.startsWith("[")) {
+                            callback.onError(new Exception(
+                                    "搜索接口没有返回 JSON 数组，可能是 API 挂了：\n\n"
+                                            + trimmed.substring(0, Math.min(trimmed.length(), 300))
+                            ));
+                            return;
+                        }
+
+                        JSONArray arr = new JSONArray(trimmed);
 
                         List<Track> tracks = new ArrayList<>();
 
@@ -92,7 +116,7 @@ public class GdMusicApi {
                     + "?types=url"
                     + "&source=" + track.source
                     + "&id=" + idEncoded
-                    + "&br=320";
+                    + "&br=740";
 
             Request request = new Request.Builder().url(url).get().build();
 

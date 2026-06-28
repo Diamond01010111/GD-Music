@@ -234,7 +234,7 @@ public class MainActivity extends AppCompatActivity {
                     playerManager.playTrack(updatedTrack);
                 });
 
-                requestPicAndLyric(updatedTrack);
+                // requestPicAndLyric(updatedTrack);
             }
 
             @Override
