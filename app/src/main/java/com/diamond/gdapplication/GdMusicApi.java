@@ -29,6 +29,10 @@ public class GdMusicApi {
     }
 
     public void searchTracks(String keywordRaw, SearchCallback callback) {
+        searchTracks(keywordRaw, 5, 1, callback);
+    }
+
+    public void searchTracks(String keywordRaw, int count, int page, SearchCallback callback) {
         try {
             String keyword = URLEncoder.encode(keywordRaw, "UTF-8");
 
@@ -36,8 +40,8 @@ public class GdMusicApi {
                     + "?types=search"
                     + "&source=netease"
                     + "&name=" + keyword
-                    + "&count=5"
-                    + "&pages=1";
+                    + "&count=" + count
+                    + "&pages=" + page;
 
             Request request = new Request.Builder()
                     .url(url)
@@ -76,7 +80,6 @@ public class GdMusicApi {
                         }
 
                         JSONArray arr = new JSONArray(trimmed);
-
                         List<Track> tracks = new ArrayList<>();
 
                         for (int i = 0; i < arr.length(); i++) {
@@ -86,7 +89,7 @@ public class GdMusicApi {
                                     item.getString("id"),
                                     item.optString("source", "netease"),
                                     item.optString("name", "未知歌曲"),
-                                    item.opt("artist").toString(),
+                                    cleanArtist(item.opt("artist").toString()),
                                     item.optString("album", ""),
                                     item.optString("pic_id", ""),
                                     item.optString("lyric_id", "")
@@ -108,7 +111,22 @@ public class GdMusicApi {
         }
     }
 
+    private String cleanArtist(String artistRaw) {
+        if (artistRaw == null) {
+            return "";
+        }
+
+        return artistRaw
+                .replace("[", "")
+                .replace("]", "")
+                .replace("\"", "");
+    }
+
     public void getAudioUrl(Track track, TrackCallback callback) {
+        getAudioUrl(track, 320, callback);
+    }
+
+    public void getAudioUrl(Track track, int br, TrackCallback callback) {
         try {
             String idEncoded = URLEncoder.encode(track.id, "UTF-8");
 
@@ -116,9 +134,13 @@ public class GdMusicApi {
                     + "?types=url"
                     + "&source=" + track.source
                     + "&id=" + idEncoded
-                    + "&br=740";
+                    + "&br=" + br;
 
-            Request request = new Request.Builder().url(url).get().build();
+            Request request = new Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .get()
+                    .build();
 
             client.newCall(request).enqueue(new Callback() {
                 @Override
@@ -130,10 +152,19 @@ public class GdMusicApi {
                 public void onResponse(Call call, Response response) throws IOException {
                     try {
                         String body = response.body() != null ? response.body().string() : "";
+
+                        if (!response.isSuccessful()) {
+                            callback.onError(new Exception("HTTP 错误：" + response.code()));
+                            return;
+                        }
+
                         JSONObject obj = parseObject(body);
 
                         track.audioUrl = obj.optString("url", "");
-                        if (track.audioUrl != null && !track.audioUrl.isEmpty() && !track.audioUrl.equals("null")) {
+
+                        if (track.audioUrl != null
+                                && !track.audioUrl.isEmpty()
+                                && !track.audioUrl.equals("null")) {
                             track.audioUrlCachedAt = System.currentTimeMillis();
                         }
 

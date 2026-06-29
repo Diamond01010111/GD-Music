@@ -37,6 +37,15 @@ public class MainUi {
 
     public EditText importUrlInput;
     public Button importPlaylistButton;
+    public ScrollView searchResultScrollView;
+    public LinearLayout searchResultList;
+    public TextView searchResultFooter;
+
+    private Runnable onSearchBottomReached;
+
+    public LinearLayout myPlaylistList;
+    public Button settingsButton;
+    public LinearLayout queueList;
 
     public MainUi(Context context) {
         this.context = context;
@@ -85,9 +94,16 @@ public class MainUi {
         LinearLayout searchBar = new LinearLayout(context);
         searchBar.setOrientation(LinearLayout.HORIZONTAL);
 
+        settingsButton = new Button(context);
+        settingsButton.setText("设置");
+        settingsButton.setTextSize(12);
+        settingsButton.setAllCaps(false);
+        settingsButton.setMinWidth(0);
+        settingsButton.setPadding(dp(4), 0, dp(4), 0);
+
         searchInput = new EditText(context);
         searchInput.setHint("搜索歌曲");
-        searchInput.setText("稻香");
+        searchInput.setText("音乐/作者/专辑");
         searchInput.setSingleLine(true);
         searchInput.setLayoutParams(new LinearLayout.LayoutParams(
                 0,
@@ -98,6 +114,10 @@ public class MainUi {
         searchButton = new Button(context);
         searchButton.setText("搜索");
 
+        searchBar.addView(settingsButton, new LinearLayout.LayoutParams(
+                dp(64),
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
         searchBar.addView(searchInput);
         searchBar.addView(searchButton);
 
@@ -120,38 +140,55 @@ public class MainUi {
 
     private LinearLayout createMiniPlayer() {
         LinearLayout miniPlayer = new LinearLayout(context);
-        miniPlayer.setOrientation(LinearLayout.HORIZONTAL);
+        miniPlayer.setOrientation(LinearLayout.VERTICAL);
+        miniPlayer.setPadding(dp(4), dp(4), dp(4), dp(4));
 
+        // 第一行：歌曲名
         songTitleText = new TextView(context);
         songTitleText.setText("歌曲名称");
         songTitleText.setSingleLine(true);
-        songTitleText.setLayoutParams(new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1
+        songTitleText.setTextSize(14);
+        songTitleText.setPadding(dp(4), dp(2), dp(4), dp(2));
+
+        miniPlayer.addView(songTitleText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+
+        // 第二行：控制按钮
+        LinearLayout controlRow = new LinearLayout(context);
+        controlRow.setOrientation(LinearLayout.HORIZONTAL);
 
         prevButton = new Button(context);
         prevButton.setText("上一首");
+        styleMiniButton(prevButton);
 
         playPauseButton = new Button(context);
         playPauseButton.setText("▶");
+        styleMiniButton(playPauseButton);
 
         nextButton = new Button(context);
         nextButton.setText("下一首");
+        styleMiniButton(nextButton);
 
         modeButton = new Button(context);
-        modeButton.setText("播放模式：自动循环");
+        modeButton.setText("循环");
+        styleMiniButton(modeButton);
 
         playlistButton = new Button(context);
-        playlistButton.setText("播放列表");
+        playlistButton.setText("队列");
+        styleMiniButton(playlistButton);
 
-        miniPlayer.addView(songTitleText);
-        miniPlayer.addView(prevButton);
-        miniPlayer.addView(playPauseButton);
-        miniPlayer.addView(nextButton);
-        miniPlayer.addView(modeButton);
-        miniPlayer.addView(playlistButton);
+        controlRow.addView(prevButton, miniButtonParams());
+        controlRow.addView(playPauseButton, miniButtonParams());
+        controlRow.addView(nextButton, miniButtonParams());
+        controlRow.addView(modeButton, miniButtonParams());
+        controlRow.addView(playlistButton, miniButtonParams());
+
+        miniPlayer.addView(controlRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
 
         return miniPlayer;
     }
@@ -221,10 +258,78 @@ public class MainUi {
         title.setTextSize(22);
 
         TextView desc = new TextView(context);
-        desc.setText("这里之后显示本地保存的歌单，比如：我喜欢的音乐、车载歌单、最近收藏。");
+        desc.setText("我的收藏");
+
+        myPlaylistList = new LinearLayout(context);
+        myPlaylistList.setOrientation(LinearLayout.VERTICAL);
+
+        ScrollView scrollView = new ScrollView(context);
+        scrollView.addView(myPlaylistList);
+        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
 
         contentContainer.addView(title);
         contentContainer.addView(desc);
+        contentContainer.addView(scrollView);
+    }
+
+    public void clearMyPlaylistItems() {
+        if (myPlaylistList != null) {
+            myPlaylistList.removeAllViews();
+        }
+    }
+
+    public void setMyPlaylistEmpty(String message) {
+        if (myPlaylistList == null) {
+            return;
+        }
+
+        TextView emptyText = new TextView(context);
+        emptyText.setText(message);
+        emptyText.setPadding(dp(12), dp(20), dp(12), dp(20));
+
+        myPlaylistList.addView(emptyText);
+    }
+
+    public void addMyPlaylistItem(
+            Track track,
+            int displayIndex,
+            View.OnClickListener clickListener
+    ) {
+        if (myPlaylistList == null) {
+            return;
+        }
+
+        LinearLayout itemLayout = new LinearLayout(context);
+        itemLayout.setOrientation(LinearLayout.VERTICAL);
+        itemLayout.setPadding(dp(12), dp(10), dp(12), dp(10));
+        itemLayout.setClickable(true);
+        itemLayout.setOnClickListener(clickListener);
+
+        TextView nameText = new TextView(context);
+        nameText.setText(displayIndex + ". " + track.name);
+        nameText.setTextSize(17);
+
+        TextView artistText = new TextView(context);
+        artistText.setText("歌手：" + track.artist);
+        artistText.setTextSize(14);
+
+        TextView albumText = new TextView(context);
+        albumText.setText("专辑：" + track.album);
+        albumText.setTextSize(14);
+
+        TextView divider = new TextView(context);
+        divider.setText("────────────");
+
+        itemLayout.addView(nameText);
+        itemLayout.addView(artistText);
+        itemLayout.addView(albumText);
+        itemLayout.addView(divider);
+
+        myPlaylistList.addView(itemLayout);
     }
 
     public void showImportPlaylistPage() {
@@ -256,13 +361,11 @@ public class MainUi {
         title.setText("播放列表");
         title.setTextSize(22);
 
-        TextView desc = new TextView(context);
-        desc.setText("这里之后显示当前临时播放队列。");
-
-        detachFromParent(resultText);
+        queueList = new LinearLayout(context);
+        queueList.setOrientation(LinearLayout.VERTICAL);
 
         ScrollView scrollView = new ScrollView(context);
-        scrollView.addView(resultText);
+        scrollView.addView(queueList);
         scrollView.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -270,8 +373,87 @@ public class MainUi {
         ));
 
         contentContainer.addView(title);
-        contentContainer.addView(desc);
         contentContainer.addView(scrollView);
+    }
+
+    public void clearQueueItems() {
+        if (queueList != null) {
+            queueList.removeAllViews();
+        }
+    }
+
+    public void setQueueEmpty(String message) {
+        if (queueList == null) {
+            return;
+        }
+
+        TextView emptyText = new TextView(context);
+        emptyText.setText(message);
+        emptyText.setPadding(dp(12), dp(20), dp(12), dp(20));
+        queueList.addView(emptyText);
+    }
+
+    public void addQueueItem(
+            Track track,
+            int displayIndex,
+            boolean isCurrent,
+            View.OnClickListener clickListener,
+            View.OnClickListener moreClickListener
+    ) {
+        if (queueList == null) {
+            return;
+        }
+
+        LinearLayout itemLayout = new LinearLayout(context);
+        itemLayout.setOrientation(LinearLayout.VERTICAL);
+        itemLayout.setPadding(dp(12), dp(10), dp(12), dp(10));
+        itemLayout.setClickable(true);
+        itemLayout.setOnClickListener(clickListener);
+
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        LinearLayout textColumn = new LinearLayout(context);
+        textColumn.setOrientation(LinearLayout.VERTICAL);
+        textColumn.setLayoutParams(new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1
+        ));
+
+        TextView nameText = new TextView(context);
+        String prefix = isCurrent ? "▶ " : "";
+        nameText.setText(prefix + displayIndex + ". " + track.name);
+        nameText.setTextSize(17);
+
+        TextView artistText = new TextView(context);
+        artistText.setText("歌手：" + track.artist);
+        artistText.setTextSize(14);
+
+        TextView albumText = new TextView(context);
+        albumText.setText("专辑：" + track.album);
+        albumText.setTextSize(14);
+
+        textColumn.addView(nameText);
+        textColumn.addView(artistText);
+        textColumn.addView(albumText);
+
+        Button moreButton = new Button(context);
+        moreButton.setText("更多");
+        moreButton.setTextSize(12);
+        moreButton.setAllCaps(false);
+        moreButton.setOnClickListener(moreClickListener);
+
+        row.addView(textColumn);
+        row.addView(moreButton);
+
+        TextView divider = new TextView(context);
+        divider.setText("────────────");
+
+        itemLayout.addView(row);
+        itemLayout.addView(divider);
+
+        queueList.addView(itemLayout);
     }
 
     public void setStatus(String message) {
@@ -287,7 +469,15 @@ public class MainUi {
     }
 
     public void setModeName(String modeName) {
-        modeButton.setText("播放模式：" + modeName);
+        if (modeName.equals("自动循环")) {
+            modeButton.setText("循环");
+        } else if (modeName.equals("单曲循环")) {
+            modeButton.setText("单曲");
+        } else if (modeName.equals("随机播放")) {
+            modeButton.setText("随机");
+        } else {
+            modeButton.setText(modeName);
+        }
     }
 
     private void detachFromParent(View view) {
@@ -302,6 +492,25 @@ public class MainUi {
         return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
     }
 
+    private LinearLayout.LayoutParams miniButtonParams() {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                dp(42),
+                1
+        );
+
+        params.setMargins(dp(2), dp(2), dp(2), dp(2));
+        return params;
+    }
+
+    private void styleMiniButton(Button button) {
+        button.setTextSize(12);
+        button.setAllCaps(false);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setPadding(dp(2), 0, dp(2), 0);
+    }
+
     private int getStatusBarHeight() {
         int resourceId = context.getResources().getIdentifier(
                 "status_bar_height",
@@ -314,5 +523,130 @@ public class MainUi {
         }
 
         return dp(24);
+    }
+
+    public void addSearchResultItem(
+            Track track,
+            int displayIndex,
+            View.OnClickListener clickListener,
+            View.OnClickListener moreClickListener
+    ) {
+        if (searchResultList == null) {
+            return;
+        }
+
+        LinearLayout itemLayout = new LinearLayout(context);
+        itemLayout.setOrientation(LinearLayout.VERTICAL);
+        itemLayout.setPadding(dp(12), dp(10), dp(12), dp(10));
+        itemLayout.setClickable(true);
+        itemLayout.setOnClickListener(clickListener);
+
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        LinearLayout textColumn = new LinearLayout(context);
+        textColumn.setOrientation(LinearLayout.VERTICAL);
+        textColumn.setLayoutParams(new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1
+        ));
+
+        TextView nameText = new TextView(context);
+        nameText.setText(displayIndex + ". " + track.name);
+        nameText.setTextSize(17);
+
+        TextView artistText = new TextView(context);
+        artistText.setText("歌手：" + track.artist);
+        artistText.setTextSize(14);
+
+        TextView albumText = new TextView(context);
+        albumText.setText("专辑：" + track.album);
+        albumText.setTextSize(14);
+
+        textColumn.addView(nameText);
+        textColumn.addView(artistText);
+        textColumn.addView(albumText);
+
+        Button moreButton = new Button(context);
+        moreButton.setText("更多");
+
+        if (moreClickListener != null) {
+            moreButton.setOnClickListener(moreClickListener);
+        }
+
+        row.addView(textColumn);
+        row.addView(moreButton);
+
+        TextView divider = new TextView(context);
+        divider.setText("────────────");
+
+        itemLayout.addView(row);
+        itemLayout.addView(divider);
+
+        searchResultList.addView(itemLayout);
+    }
+
+    public void setOnSearchBottomReached(Runnable runnable) {
+        this.onSearchBottomReached = runnable;
+    }
+
+    public void showSearchResultsPage(String keyword) {
+        contentContainer.removeAllViews();
+
+        TextView title = new TextView(context);
+        title.setText("搜索结果：" + keyword);
+        title.setTextSize(22);
+
+        searchResultList = new LinearLayout(context);
+        searchResultList.setOrientation(LinearLayout.VERTICAL);
+
+        searchResultFooter = new TextView(context);
+        searchResultFooter.setText("正在加载...");
+        searchResultFooter.setPadding(dp(8), dp(16), dp(8), dp(16));
+
+        LinearLayout pageContent = new LinearLayout(context);
+        pageContent.setOrientation(LinearLayout.VERTICAL);
+        pageContent.addView(searchResultList);
+        pageContent.addView(searchResultFooter);
+
+        searchResultScrollView = new ScrollView(context);
+        searchResultScrollView.addView(pageContent);
+        searchResultScrollView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+
+        searchResultScrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            if (searchResultScrollView.getChildCount() == 0) {
+                return;
+            }
+
+            View child = searchResultScrollView.getChildAt(0);
+            int childHeight = child.getMeasuredHeight();
+            int visibleHeight = searchResultScrollView.getHeight();
+
+            boolean nearBottom = scrollY + visibleHeight >= childHeight - dp(80);
+
+            if (nearBottom && onSearchBottomReached != null) {
+                onSearchBottomReached.run();
+            }
+        });
+
+        contentContainer.addView(title);
+        contentContainer.addView(searchResultScrollView);
+    }
+
+    public void setSearchFooter(String message) {
+        if (searchResultFooter != null) {
+            searchResultFooter.setText(message);
+        }
+    }
+
+    public void clearSearchResults() {
+        if (searchResultList != null) {
+            searchResultList.removeAllViews();
+        }
     }
 }

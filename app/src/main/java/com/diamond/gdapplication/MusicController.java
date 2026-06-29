@@ -32,6 +32,8 @@ public class MusicController {
     private PlayMode playMode = PlayMode.LIST_LOOP;
 
     private Listener listener;
+    private int audioQuality = 320;
+    private boolean showDetailedInfo = false;
 
     public MusicController(GdMusicApi api, PlayerManager playerManager) {
         this.api = api;
@@ -85,6 +87,24 @@ public class MusicController {
         });
     }
 
+    public void setPlaylistAndPlay(List<Track> tracks, int startIndex) {
+        if (tracks == null || tracks.isEmpty()) {
+            setStatus("播放队列为空");
+            return;
+        }
+
+        if (startIndex < 0 || startIndex >= tracks.size()) {
+            setStatus("选择的歌曲序号不合法：" + startIndex);
+            return;
+        }
+
+        playlist.clear();
+        playlist.addAll(tracks);
+        currentIndex = startIndex;
+
+        playTrackAtCurrentIndex();
+    }
+
     public void playNext() {
         if (playlist.isEmpty()) {
             setStatus("播放队列为空，请先搜索歌曲");
@@ -103,6 +123,33 @@ public class MusicController {
         }
 
         playTrackAtCurrentIndex();
+    }
+
+    public void addToPlayNext(Track track) {
+        if (track == null) {
+            setStatus("歌曲为空，无法加入下一首播放");
+            return;
+        }
+
+        if (playlist.isEmpty() || currentIndex < 0) {
+            playlist.clear();
+            playlist.add(track);
+            currentIndex = 0;
+
+            setStatus("播放队列为空，直接播放：\n" + track.name + "\n" + track.artist);
+            playTrackAtCurrentIndex();
+            return;
+        }
+
+        int insertIndex = currentIndex + 1;
+
+        if (insertIndex > playlist.size()) {
+            insertIndex = playlist.size();
+        }
+
+        playlist.add(insertIndex, track);
+
+        appendStatus("\n\n已加入下一首播放：\n" + track.name + "\n" + track.artist);
     }
 
     public void playPrevious() {
@@ -190,7 +237,7 @@ public class MusicController {
                         + "lyricId = " + track.lyricId
         );
 
-        api.getAudioUrl(track, new GdMusicApi.TrackCallback() {
+        api.getAudioUrl(track, audioQuality, new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track updatedTrack) {
                 if (updatedTrack.audioUrl == null
@@ -205,20 +252,7 @@ public class MusicController {
                 }
 
                 mainHandler.post(() -> {
-                    setStatusDirect(
-                            "正在播放：\n"
-                                    + updatedTrack.name + "\n"
-                                    + updatedTrack.artist + "\n"
-                                    + updatedTrack.album + "\n\n"
-                                    + "当前序号：" + (currentIndex + 1) + " / " + playlist.size() + "\n"
-                                    + "播放模式：" + getPlayModeName() + "\n\n"
-                                    + "trackId = " + updatedTrack.id + "\n"
-                                    + "picId = " + updatedTrack.picId + "\n"
-                                    + "lyricId = " + updatedTrack.lyricId + "\n\n"
-                                    + "audioUrl:\n"
-                                    + updatedTrack.audioUrl
-                    );
-
+                    setStatusDirect(buildNowPlayingText(updatedTrack));
                     playerManager.playTrack(updatedTrack);
                 });
 
@@ -230,6 +264,28 @@ public class MusicController {
                 setStatus("获取播放 URL 失败：\n" + e.getMessage());
             }
         });
+    }
+
+    private String buildNowPlayingText(Track track) {
+        String text =
+                "正在播放：\n"
+                        + track.name + "\n"
+                        + track.artist + "\n"
+                        + track.album + "\n\n"
+                        + "当前序号：" + (currentIndex + 1) + " / " + playlist.size() + "\n"
+                        + "播放模式：" + getPlayModeName() + "\n"
+                        + "音质：" + audioQuality;
+
+        if (showDetailedInfo) {
+            text += "\n\n"
+                    + "trackId = " + track.id + "\n"
+                    + "picId = " + track.picId + "\n"
+                    + "lyricId = " + track.lyricId + "\n\n"
+                    + "audioUrl:\n"
+                    + track.audioUrl;
+        }
+
+        return text;
     }
 
     private void requestPicAndLyric(Track track) {
@@ -322,6 +378,7 @@ public class MusicController {
         return now - track.audioUrlCachedAt < maxAge;
     }
 
+
     private String getPlayModeName() {
         if (playMode == PlayMode.SINGLE_LOOP) {
             return "单曲循环";
@@ -348,5 +405,53 @@ public class MusicController {
         if (listener != null) {
             mainHandler.post(() -> listener.onStatusAppend(message));
         }
+    }
+
+    public List<Track> getPlaylistSnapshot() {
+        return new ArrayList<>(playlist);
+    }
+
+    public int getCurrentIndex() {
+        return currentIndex;
+    }
+
+    public void playAtIndex(int index) {
+        if (playlist.isEmpty()) {
+            setStatus("播放队列为空");
+            return;
+        }
+
+        if (index < 0 || index >= playlist.size()) {
+            setStatus("歌曲序号不合法：" + index);
+            return;
+        }
+
+        currentIndex = index;
+        playTrackAtCurrentIndex();
+    }
+
+    public void setAudioQuality(int audioQuality) {
+        this.audioQuality = audioQuality;
+
+        // 音质改了以后，已有 audioUrl 可能还是旧音质，简单做法：清掉缓存
+        for (Track track : playlist) {
+            track.audioUrl = "";
+            track.audioUrlCachedAt = 0;
+        }
+
+        setStatus("已切换音质：" + audioQuality);
+    }
+
+    public int getAudioQuality() {
+        return audioQuality;
+    }
+
+    public void setShowDetailedInfo(boolean showDetailedInfo) {
+        this.showDetailedInfo = showDetailedInfo;
+        setStatus("显示详细歌曲信息：" + (showDetailedInfo ? "开启" : "关闭"));
+    }
+
+    public boolean isShowDetailedInfo() {
+        return showDetailedInfo;
     }
 }
