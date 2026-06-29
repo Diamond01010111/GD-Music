@@ -1,12 +1,6 @@
 package com.diamond.gdapplication;
 
 import android.os.Bundle;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.media3.ui.PlayerView;
@@ -16,111 +10,102 @@ public class MainActivity extends AppCompatActivity {
     private GdMusicApi api;
     private PlayerManager playerManager;
     private MusicController musicController;
-
-    private TextView resultText;
-    private EditText searchInput;
-    private Button modeButton;
+    private MainUi ui;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().hide();
+        }
+
         api = new GdMusicApi();
         playerManager = new PlayerManager(this);
         musicController = new MusicController(api, playerManager);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(24, 24, 24, 24);
-        root.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-
         PlayerView playerView = new PlayerView(this);
         playerView.setPlayer(playerManager.getPlayer());
-        playerView.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                500
-        ));
 
-        searchInput = new EditText(this);
-        searchInput.setHint("输入歌曲名，例如：稻香");
-        searchInput.setText("稻香");
+        ui = new MainUi(this);
+        setContentView(ui.createView(playerView));
 
-        Button searchButton = new Button(this);
-        searchButton.setText("搜索并播放前 5 首");
+        bindMusicControllerListener();
+        bindUiEvents();
+    }
 
-        Button prevButton = new Button(this);
-        prevButton.setText("上一首");
-
-        Button nextButton = new Button(this);
-        nextButton.setText("下一首");
-
-        Button playPauseButton = new Button(this);
-        playPauseButton.setText("播放 / 暂停");
-
-        modeButton = new Button(this);
-        modeButton.setText("播放模式：自动循环");
-
-        resultText = new TextView(this);
-        resultText.setText("等待操作...");
-        resultText.setTextSize(14);
-
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.addView(resultText);
-        scrollView.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
-        ));
-
+    private void bindMusicControllerListener() {
         musicController.setListener(new MusicController.Listener() {
             @Override
             public void onStatusChanged(String message) {
-                resultText.setText(message);
+                ui.setStatus(message);
+
+                if (message != null && !message.isEmpty()) {
+                    String firstLine = message.split("\n")[0];
+                    ui.setSongTitle(firstLine);
+                }
             }
 
             @Override
             public void onStatusAppend(String message) {
-                resultText.append(message);
+                ui.appendStatus(message);
             }
 
             @Override
             public void onModeChanged(String modeName) {
-                modeButton.setText("播放模式：" + modeName);
+                ui.setModeName(modeName);
             }
         });
+    }
 
-        searchButton.setOnClickListener(v -> {
-            String keyword = searchInput.getText().toString().trim();
+    private void bindUiEvents() {
+        ui.searchButton.setOnClickListener(v -> {
+            String keyword = ui.searchInput.getText().toString().trim();
 
             if (keyword.isEmpty()) {
-                resultText.setText("请输入搜索关键词");
+                ui.setStatus("请输入搜索关键词");
                 return;
             }
 
+            ui.showHomePage();
             musicController.searchAndPlayFirst(keyword);
         });
 
-        prevButton.setOnClickListener(v -> musicController.playPrevious());
+        ui.prevButton.setOnClickListener(v -> musicController.playPrevious());
 
-        nextButton.setOnClickListener(v -> musicController.playNext());
+        ui.nextButton.setOnClickListener(v -> musicController.playNext());
 
-        playPauseButton.setOnClickListener(v -> musicController.playOrPause());
+        ui.playPauseButton.setOnClickListener(v -> musicController.playOrPause());
 
-        modeButton.setOnClickListener(v -> musicController.switchPlayMode());
+        ui.modeButton.setOnClickListener(v -> musicController.switchPlayMode());
 
-        root.addView(playerView);
-        root.addView(searchInput);
-        root.addView(searchButton);
-        root.addView(prevButton);
-        root.addView(nextButton);
-        root.addView(playPauseButton);
-        root.addView(modeButton);
-        root.addView(scrollView);
+        ui.playlistButton.setOnClickListener(v -> ui.showQueuePage());
 
-        setContentView(root);
+        ui.homeTabButton.setOnClickListener(v -> ui.showHomePage());
+
+        ui.myPlaylistTabButton.setOnClickListener(v -> ui.showMyPlaylistPage());
+
+        ui.importTabButton.setOnClickListener(v -> {
+            ui.showImportPlaylistPage();
+
+            if (ui.importPlaylistButton != null) {
+                ui.importPlaylistButton.setOnClickListener(importView -> {
+                    String playlistUrl = ui.importUrlInput.getText().toString().trim();
+
+                    if (playlistUrl.isEmpty()) {
+                        ui.setStatus("请先粘贴网易云歌单链接");
+                        return;
+                    }
+
+                    ui.setStatus(
+                            "导入功能还没接 API。\n\n"
+                                    + "当前输入链接：\n"
+                                    + playlistUrl + "\n\n"
+                                    + "下一步可以做：解析 playlist id → 获取歌单歌曲 → 用 GD API 匹配播放。"
+                    );
+                });
+            }
+        });
     }
 
     @Override
