@@ -18,11 +18,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import android.app.AlertDialog;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
-import android.widget.LinearLayout;
 import android.widget.Spinner;
+
 
 public class MainActivity extends AppCompatActivity {
 
@@ -39,6 +38,20 @@ public class MainActivity extends AppCompatActivity {
     private boolean isLoadingSearch = false;
     private boolean hasMoreSearch = true;
     private LocalPlaylistStore localPlaylistStore;
+
+    private String searchSource = "netease";
+
+    private final String[] sourceLabels = new String[]{
+            "网易云 netease",
+            "酷我 kuwo",
+            "JOOX joox"
+    };
+
+    private final String[] sourceValues = new String[]{
+            "netease",
+            "kuwo",
+            "joox"
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -141,7 +154,7 @@ public class MainActivity extends AppCompatActivity {
         hasMoreSearch = true;
         currentSearchResults.clear();
 
-        ui.showSearchResultsPage(keyword);
+        ui.showSearchResultsPage(keyword + " / " + searchSource);
         ui.clearSearchResults();
         ui.setSearchFooter("正在加载第 1 页...");
 
@@ -164,7 +177,7 @@ public class MainActivity extends AppCompatActivity {
         isLoadingSearch = true;
         ui.setSearchFooter("正在加载第 " + page + " 页...");
 
-        api.searchTracks(currentSearchKeyword, SEARCH_PAGE_SIZE, page, new GdMusicApi.SearchCallback() {
+        api.searchTracks(currentSearchKeyword, searchSource, SEARCH_PAGE_SIZE, page, new GdMusicApi.SearchCallback() {
             @Override
             public void onSuccess(List<Track> tracks) {
                 runOnUiThread(() -> {
@@ -413,6 +426,29 @@ public class MainActivity extends AppCompatActivity {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(dp(20), dp(10), dp(20), dp(10));
 
+        TextView sourceLabel = new TextView(this);
+        sourceLabel.setText("搜索源");
+
+        Spinner sourceSpinner = new Spinner(this);
+
+        ArrayAdapter<String> sourceAdapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                sourceLabels
+        );
+
+        sourceSpinner.setAdapter(sourceAdapter);
+
+        int currentSourceIndex = 0;
+        for (int i = 0; i < sourceValues.length; i++) {
+            if (sourceValues[i].equals(searchSource)) {
+                currentSourceIndex = i;
+                break;
+            }
+        }
+
+        sourceSpinner.setSelection(currentSourceIndex);
+
         TextView qualityLabel = new TextView(this);
         qualityLabel.setText("歌曲音质");
 
@@ -420,45 +456,56 @@ public class MainActivity extends AppCompatActivity {
 
         Integer[] qualities = new Integer[]{128, 192, 320, 740, 999};
 
-        ArrayAdapter<Integer> adapter = new ArrayAdapter<>(
+        ArrayAdapter<Integer> qualityAdapter = new ArrayAdapter<>(
                 this,
                 android.R.layout.simple_spinner_dropdown_item,
                 qualities
         );
 
-        qualitySpinner.setAdapter(adapter);
+        qualitySpinner.setAdapter(qualityAdapter);
 
         int currentQuality = musicController.getAudioQuality();
-        int selectedIndex = 2;
+        int selectedQualityIndex = 2;
 
         for (int i = 0; i < qualities.length; i++) {
             if (qualities[i] == currentQuality) {
-                selectedIndex = i;
+                selectedQualityIndex = i;
                 break;
             }
         }
 
-        qualitySpinner.setSelection(selectedIndex);
+        qualitySpinner.setSelection(selectedQualityIndex);
 
         CheckBox detailCheckBox = new CheckBox(this);
         detailCheckBox.setText("显示详细歌曲信息");
         detailCheckBox.setChecked(musicController.isShowDetailedInfo());
 
+        layout.addView(sourceLabel);
+        layout.addView(sourceSpinner);
+
         layout.addView(qualityLabel);
         layout.addView(qualitySpinner);
+
         layout.addView(detailCheckBox);
 
         new AlertDialog.Builder(this)
                 .setTitle("设置")
                 .setView(layout)
                 .setPositiveButton("保存", (dialog, which) -> {
+                    int selectedSourceIndex = sourceSpinner.getSelectedItemPosition();
+                    searchSource = sourceValues[selectedSourceIndex];
+
                     int selectedQuality = (Integer) qualitySpinner.getSelectedItem();
                     boolean showInfo = detailCheckBox.isChecked();
 
                     musicController.setAudioQuality(selectedQuality);
                     musicController.setShowDetailedInfo(showInfo);
 
-                    Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(
+                            this,
+                            "设置已保存：搜索源 " + sourceLabels[selectedSourceIndex],
+                            Toast.LENGTH_SHORT
+                    ).show();
                 })
                 .setNegativeButton("取消", null)
                 .show();

@@ -33,12 +33,16 @@ public class GdMusicApi {
     }
 
     public void searchTracks(String keywordRaw, int count, int page, SearchCallback callback) {
+        searchTracks(keywordRaw, "netease", count, page, callback);
+    }
+
+    public void searchTracks(String keywordRaw, String source, int count, int page, SearchCallback callback) {
         try {
             String keyword = URLEncoder.encode(keywordRaw, "UTF-8");
 
             String url = "https://music-api.gdstudio.xyz/api.php"
                     + "?types=search"
-                    + "&source=netease"
+                    + "&source=" + source
                     + "&name=" + keyword
                     + "&count=" + count
                     + "&pages=" + page;
@@ -87,7 +91,7 @@ public class GdMusicApi {
 
                             Track track = new Track(
                                     item.getString("id"),
-                                    item.optString("source", "netease"),
+                                    item.optString("source", source),
                                     item.optString("name", "未知歌曲"),
                                     cleanArtist(item.opt("artist").toString()),
                                     item.optString("album", ""),

@@ -32,7 +32,7 @@ public class MusicController {
     private PlayMode playMode = PlayMode.LIST_LOOP;
 
     private Listener listener;
-    private int audioQuality = 320;
+    private int audioQuality = 999;
     private boolean showDetailedInfo = false;
 
     public MusicController(GdMusicApi api, PlayerManager playerManager) {
