@@ -130,6 +130,31 @@ fun MusicApp(
         mutableStateOf<Track?>(null)
     }
 
+    fun executeSearch(
+        keyword: String,
+        category: SearchCategory,
+        source: String
+    ) {
+        isSearching = true
+        searchError = null
+
+        onRequestSearch(keyword, category, source) { result ->
+            isSearching = false
+
+            result.onSuccess { tracks ->
+                resultKeyword = keyword
+                resultCategory = category
+                resultSource = source
+                resultTracks = tracks
+                currentPage = AppPage.SEARCH_RESULTS
+            }
+
+            result.onFailure { error ->
+                searchError = error.message ?: "搜索失败"
+            }
+        }
+    }
+
     val showNavigationBar =
         currentPage == AppPage.HOME ||
                 currentPage == AppPage.FAVORITE ||
@@ -238,6 +263,20 @@ fun MusicApp(
                         onFavorite = { track ->
                             pendingFavoriteTrack = track
                         },
+                        onSearchArtist = { artist, source ->
+                            executeSearch(
+                                artist,
+                                SearchCategory.SONG,
+                                source
+                            )
+                        },
+                        onSearchAlbum = { album, source ->
+                            executeSearch(
+                                album,
+                                SearchCategory.ALBUM,
+                                source
+                            )
+                        },
                         onCreateFavorite = onCreateEmptyFavorite,
                         onDeleteFavorite = onDeleteFavorite,
                         onRemoveTrack = onRemoveLocalPlaylistTrack
@@ -256,34 +295,7 @@ fun MusicApp(
                             searchError = null
                             currentPage = AppPage.HOME
                         },
-                        onSearch = {
-                                keyword,
-                                category,
-                                source ->
-
-                            isSearching = true
-                            searchError = null
-
-                            onRequestSearch(
-                                keyword,
-                                category,
-                                source
-                            ) { result ->
-                                isSearching = false
-
-                                result.onSuccess { tracks ->
-                                    resultKeyword = keyword
-                                    resultCategory = category
-                                    resultSource = source
-                                    resultTracks = tracks
-                                    currentPage = AppPage.SEARCH_RESULTS
-                                }
-
-                                result.onFailure { error ->
-                                    searchError = error.message ?: "搜索失败"
-                                }
-                            }
-                        }
+                        onSearch = ::executeSearch
                     )
                 }
 
@@ -293,9 +305,11 @@ fun MusicApp(
                         category = resultCategory,
                         source = resultSource,
                         tracks = resultTracks,
+                        isSearching = isSearching,
                         onBack = {
                             currentPage = AppPage.SEARCH
                         },
+                        onSearch = ::executeSearch,
                         onTrackClick = { index ->
                             onPlayResults(resultTracks, index)
                         },

@@ -1,37 +1,18 @@
 package com.diamond.gdapplication.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.model.SearchCategory
-
-import androidx.compose.foundation.layout.Box
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.material.icons.filled.QueuePlayNext
+import com.diamond.gdapplication.ui.components.SearchControls
+import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
 
 @Composable
 fun SearchResultsScreen(
@@ -39,179 +20,157 @@ fun SearchResultsScreen(
     category: SearchCategory,
     source: String,
     tracks: List<Track>,
+    isSearching: Boolean,
     onBack: () -> Unit,
+    onSearch: (String, SearchCategory, String) -> Unit,
     onTrackClick: (Int) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
-    onPlayNext: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit
 ) {
+    var query by remember { mutableStateOf(keyword) }
+    var selectedCategory by remember { mutableStateOf(category) }
+    var selectedSource by remember { mutableStateOf(source) }
+    var moreTrack by remember { mutableStateOf<Track?>(null) }
+
+    LaunchedEffect(keyword, category, source) {
+        query = keyword
+        selectedCategory = category
+        selectedSource = source
+    }
+
+    fun search(
+        searchKeyword: String = query,
+        searchCategory: SearchCategory = selectedCategory,
+        searchSource: String = selectedSource
+    ) {
+        val clean = searchKeyword.trim()
+        if (clean.isNotEmpty() && !isSearching) {
+            query = clean
+            selectedCategory = searchCategory
+            selectedSource = searchSource
+            onSearch(clean, searchCategory, searchSource)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Row(Modifier.fillMaxWidth()) {
             IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "返回搜索"
-                )
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回搜索")
             }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(
-                        start = 4.dp,
-                        top = 6.dp
-                    )
-            ) {
-                Text(
-                    text = keyword,
-                    style = MaterialTheme.typography.titleLarge
-                )
-
-                Text(
-                    text = "${category.label} · $source",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            Text(
+                "搜索结果",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(start = 4.dp, top = 10.dp)
+            )
         }
 
-        if (tracks.isEmpty()) {
+        SearchControls(
+            keyword = query,
+            category = selectedCategory,
+            sourceValue = selectedSource,
+            isSearching = isSearching,
+            onKeywordChange = { query = it },
+            onCategoryChange = { newCategory ->
+                val nextSource = if (
+                    newCategory == SearchCategory.NETEASE_PLAYLIST
+                ) {
+                    "netease"
+                } else {
+                    selectedSource
+                }
+                search(query, newCategory, nextSource)
+            },
+            onSourceChange = { newSource ->
+                val nextCategory = if (
+                    selectedCategory == SearchCategory.NETEASE_PLAYLIST &&
+                    newSource != "netease"
+                ) {
+                    SearchCategory.SONG
+                } else {
+                    selectedCategory
+                }
+                search(query, nextCategory, newSource)
+            },
+            onSubmit = { search() }
+        )
+
+        if (isSearching) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+        }
+
+        if (tracks.isEmpty() && !isSearching) {
             Text(
-                text = "没有找到搜索结果",
+                "没有找到搜索结果",
                 modifier = Modifier.padding(20.dp)
             )
-
-            return
-        }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(
-                count = tracks.size,
-                key = { index ->
-                    "${tracks[index].source}-${tracks[index].id}-$index"
-                }
-            ) { index ->
-                val track = tracks[index]
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        onTrackClick(index)
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(
+                    count = tracks.size,
+                    key = { index ->
+                        "${tracks[index].source}-${tracks[index].id}-$index"
                     }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp)
+                ) { index ->
+                    val track = tracks[index]
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onTrackClick(index) }
                     ) {
-                        Column(
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp)
                         ) {
-                            Text(
-                                text = track.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
-                            )
-
-                            Text(
-                                text = track.artist,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1
-                            )
-
-                            if (track.album.isNotBlank()) {
+                            Column(Modifier.weight(1f)) {
                                 Text(
-                                    text = track.album,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    track.name,
+                                    style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1
                                 )
-                            }
-                        }
-
-                        Box {
-                            var menuExpanded by remember {
-                                mutableStateOf(false)
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    menuExpanded = true
+                                Text(
+                                    track.artist,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1
+                                )
+                                if (track.album.isNotBlank()) {
+                                    Text(
+                                        track.album,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1
+                                    )
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "更多"
-                                )
                             }
-
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = {
-                                    menuExpanded = false
-                                }
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text("添加到下一首播放")
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.QueuePlayNext,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onPlayNext(track)
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Text("加入播放列表")
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.PlaylistAdd,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onAddToPlaylist(track)
-                                    }
-                                )
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Text("添加到收藏")
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.FavoriteBorder,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onFavorite(track)
-                                    }
-                                )
-
-
+                            IconButton(onClick = { moreTrack = track }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    moreTrack?.let { track ->
+        TrackMoreBottomSheet(
+            track = track,
+            onDismiss = { moreTrack = null },
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = { artist ->
+                search(artist, SearchCategory.SONG, selectedSource)
+            },
+            onSearchAlbum = { album ->
+                search(album, SearchCategory.ALBUM, selectedSource)
+            }
+        )
     }
 }

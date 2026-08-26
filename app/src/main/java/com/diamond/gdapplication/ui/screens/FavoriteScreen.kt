@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.LocalPlaylistStore
 import com.diamond.gdapplication.Track
+import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
 
 @Composable
 fun FavoriteScreen(
@@ -22,6 +23,8 @@ fun FavoriteScreen(
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit,
     onCreateFavorite: (String) -> Unit,
     onDeleteFavorite: (String) -> Unit,
     onRemoveTrack: (String, Track) -> Unit
@@ -38,6 +41,8 @@ fun FavoriteScreen(
             onPlayNext = onPlayNext,
             onAddToPlaylist = onAddToPlaylist,
             onFavorite = onFavorite,
+            onSearchArtist = onSearchArtist,
+            onSearchAlbum = onSearchAlbum,
             onDelete = {
                 onDeleteFavorite(selected.id)
                 selectedId = null
@@ -124,10 +129,13 @@ private fun FavoriteDetail(
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit,
     onDelete: () -> Unit,
     onRemoveTrack: (Track) -> Unit
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var moreTrack by remember { mutableStateOf<Track?>(null) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(
@@ -198,18 +206,31 @@ private fun FavoriteDetail(
                                     maxLines = 1
                                 )
                             }
-                            TrackMoreMenu(
-                                track,
-                                onPlayNext,
-                                onAddToPlaylist,
-                                onFavorite,
-                                onRemoveTrack
-                            )
+                            IconButton(onClick = { moreTrack = track }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    moreTrack?.let { track ->
+        TrackMoreBottomSheet(
+            track = track,
+            onDismiss = { moreTrack = null },
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = { artist ->
+                onSearchArtist(artist, track.source)
+            },
+            onSearchAlbum = { album ->
+                onSearchAlbum(album, track.source)
+            },
+            onRemove = onRemoveTrack
+        )
     }
 
     if (confirmDelete) {
@@ -258,65 +279,6 @@ private fun NameFavoriteDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
-}
-
-@Composable
-private fun TrackMoreMenu(
-    track: Track,
-    onPlayNext: (Track) -> Unit,
-    onAddToPlaylist: (Track) -> Unit,
-    onFavorite: (Track) -> Unit,
-    onRemoveTrack: (Track) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "更多")
-        }
-        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text("添加到下一首播放") },
-                leadingIcon = {
-                    Icon(Icons.Default.QueuePlayNext, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onPlayNext(track)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("加入播放列表") },
-                leadingIcon = {
-                    Icon(Icons.Default.PlaylistAdd, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onAddToPlaylist(track)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("添加到收藏") },
-                leadingIcon = {
-                    Icon(Icons.Default.FavoriteBorder, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onFavorite(track)
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("移出当前收藏") },
-                leadingIcon = {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = null)
-                },
-                onClick = {
-                    expanded = false
-                    onRemoveTrack(track)
-                }
-            )
-        }
-    }
 }
 
 @Composable
