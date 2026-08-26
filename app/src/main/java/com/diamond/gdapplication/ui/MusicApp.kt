@@ -77,6 +77,7 @@ fun MusicApp(
     onAddToPlaylist: (Track) -> Unit,
     onCreateLocalPlaylist: (String, Track) -> Unit,
     onAddToLocalPlaylist: (String, Track) -> Unit,
+    onRemoveLocalPlaylistTrack: (String, Track) -> Unit,
     onPlayNext: (Track) -> Unit
 ) {
     var currentPage by remember {
@@ -125,7 +126,11 @@ fun MusicApp(
         contentWindowInsets = WindowInsets.safeDrawing,
 
         bottomBar = {
-            Column {
+            Column(
+                modifier = Modifier.padding(
+                    bottom = if (showNavigationBar) 0.dp else 12.dp
+                )
+            ) {
                 MiniPlayer(
                     track = nowPlayingTrack,
                     artworkUrl = artworkUrl,
@@ -213,7 +218,13 @@ fun MusicApp(
                 AppPage.FAVORITE -> {
                     FavoriteScreen(
                         playlists = localPlaylists,
-                        onPlayPlaylist = onPlayResults
+                        onPlayPlaylist = onPlayResults,
+                        onPlayNext = onPlayNext,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onFavorite = { track ->
+                            pendingFavoriteTrack = track
+                        },
+                        onRemoveTrack = onRemoveLocalPlaylistTrack
                     )
                 }
 
