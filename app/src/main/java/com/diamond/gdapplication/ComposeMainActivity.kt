@@ -220,10 +220,21 @@ class ComposeMainActivity : ComponentActivity() {
                             localPlaylists = localPlaylistStore.playlists
 
                             if (playlist != null) {
-                                showToast("已创建歌单并收藏：${track.name}")
+                                showToast("已创建收藏并添加：${track.name}")
                             } else {
-                                showToast("歌单名称不能为空")
+                                showToast("收藏名称不能为空")
                             }
+                        }
+                    },
+
+                    onCreateEmptyFavorite = { name ->
+                        val favorite = localPlaylistStore.createPlaylist(name)
+                        localPlaylists = localPlaylistStore.playlists
+
+                        if (favorite != null) {
+                            showToast("已创建收藏：${favorite.name}")
+                        } else {
+                            showToast("收藏名称不能为空")
                         }
                     },
 
@@ -238,8 +249,19 @@ class ComposeMainActivity : ComponentActivity() {
                             if (added) {
                                 showToast("已收藏：${track.name}")
                             } else {
-                                showToast("歌曲已在该歌单中")
+                                showToast("歌曲已在该收藏中")
                             }
+                        }
+                    },
+
+                    onDeleteFavorite = { favoriteId ->
+                        val deleted = localPlaylistStore.deletePlaylist(favoriteId)
+                        localPlaylists = localPlaylistStore.playlists
+
+                        if (deleted) {
+                            showToast("收藏已删除")
+                        } else {
+                            showToast("删除收藏失败")
                         }
                     },
 
