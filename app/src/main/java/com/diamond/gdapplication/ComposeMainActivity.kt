@@ -287,33 +287,36 @@ class ComposeMainActivity : ComponentActivity() {
         onChanged: () -> Unit
     ) {
         localPlaylistStore.playlists.forEach { playlist ->
-            playlist.tracks
-                .filter {
-                    it.picUrl.isNullOrBlank() || it.picUrl == "null"
-                }
-                .forEach { track ->
-                    api.getPicUrl(
-                        track,
-                        object : GdMusicApi.TrackCallback {
-                            override fun onSuccess(updatedTrack: Track) {
-                                runOnUiThread {
-                                    if (
-                                        localPlaylistStore.updateTrackInPlaylist(
-                                            playlist.id,
-                                            updatedTrack
-                                        )
-                                    ) {
-                                        onChanged()
-                                    }
-                                }
-                            }
+            val coverTrack = playlist.coverTrack ?: return@forEach
 
-                            override fun onError(e: Exception) {
-                                // 保留默认封面，下次启动时再次尝试。
+            if (
+                !coverTrack.picUrl.isNullOrBlank() &&
+                coverTrack.picUrl != "null"
+            ) {
+                return@forEach
+            }
+
+            api.getPicUrl(
+                coverTrack,
+                object : GdMusicApi.TrackCallback {
+                    override fun onSuccess(updatedTrack: Track) {
+                        runOnUiThread {
+                            if (
+                                localPlaylistStore.updateTrackInPlaylist(
+                                    playlist.id,
+                                    updatedTrack
+                                )
+                            ) {
+                                onChanged()
                             }
                         }
-                    )
+                    }
+
+                    override fun onError(e: Exception) {
+                        // 保留默认封面，下次启动时再次尝试。
+                    }
                 }
+            )
         }
     }
 
