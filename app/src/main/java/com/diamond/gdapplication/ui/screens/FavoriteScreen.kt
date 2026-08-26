@@ -23,8 +23,8 @@ fun FavoriteScreen(
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
-    onSearchArtist: (String) -> Unit,
-    onSearchAlbum: (String) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit,
     onCreateFavorite: (String) -> Unit,
     onDeleteFavorite: (String) -> Unit,
     onRemoveTrack: (String, Track) -> Unit
@@ -129,8 +129,8 @@ private fun FavoriteDetail(
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
-    onSearchArtist: (String) -> Unit,
-    onSearchAlbum: (String) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit,
     onDelete: () -> Unit,
     onRemoveTrack: (Track) -> Unit
 ) {
@@ -223,8 +223,12 @@ private fun FavoriteDetail(
             onPlayNext = onPlayNext,
             onAddToPlaylist = onAddToPlaylist,
             onFavorite = onFavorite,
-            onSearchArtist = onSearchArtist,
-            onSearchAlbum = onSearchAlbum,
+            onSearchArtist = { artist ->
+                onSearchArtist(artist, track.source)
+            },
+            onSearchAlbum = { album ->
+                onSearchAlbum(album, track.source)
+            },
             onRemove = onRemoveTrack
         )
     }
