@@ -93,7 +93,7 @@ fun TrackMoreBottomSheet(
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     item {
                         SheetAction(
-                            "搜索歌手",
+                            "搜索歌手：${track.artist.ifBlank { "未知歌手" }}",
                             Icons.Default.PersonSearch,
                             enabled = artists.isNotEmpty()
                         ) {
@@ -107,7 +107,7 @@ fun TrackMoreBottomSheet(
                     }
                     item {
                         SheetAction(
-                            "搜索专辑",
+                            "搜索专辑：${track.album.ifBlank { "未知专辑" }}",
                             Icons.Default.Album,
                             enabled = track.album.isNotBlank()
                         ) {
