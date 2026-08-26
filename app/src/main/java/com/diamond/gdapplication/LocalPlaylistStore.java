@@ -122,6 +122,30 @@ public class LocalPlaylistStore {
         return false;
     }
 
+    public boolean updateTrackInPlaylist(String playlistId, Track updatedTrack) {
+        if (playlistId == null || updatedTrack == null || !isValidTrack(updatedTrack)) {
+            return false;
+        }
+
+        List<LocalPlaylist> playlists = getPlaylists();
+
+        for (LocalPlaylist playlist : playlists) {
+            if (!playlist.id.equals(playlistId)) {
+                continue;
+            }
+
+            for (int index = 0; index < playlist.tracks.size(); index++) {
+                if (sameTrack(playlist.tracks.get(index), updatedTrack)) {
+                    playlist.tracks.set(index, updatedTrack);
+                    savePlaylists(playlists);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public boolean removeTrackFromPlaylist(String playlistId, Track track) {
         if (playlistId == null || track == null) {
             return false;
