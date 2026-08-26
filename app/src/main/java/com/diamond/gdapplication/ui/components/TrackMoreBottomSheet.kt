@@ -37,7 +37,7 @@ fun TrackMoreBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.65f)
+                .fillMaxHeight(0.75f)
         ) {
             Column(
                 modifier = Modifier.padding(
@@ -92,6 +92,24 @@ fun TrackMoreBottomSheet(
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     item {
+                        SheetAction("添加到下一首播放", Icons.Default.QueuePlayNext) {
+                            onDismiss()
+                            onPlayNext(track)
+                        }
+                    }
+                    item {
+                        SheetAction("加入播放列表", Icons.Default.PlaylistAdd) {
+                            onDismiss()
+                            onAddToPlaylist(track)
+                        }
+                    }
+                    item {
+                        SheetAction("添加到收藏", Icons.Default.FavoriteBorder) {
+                            onDismiss()
+                            onFavorite(track)
+                        }
+                    }
+                    item {
                         SheetAction(
                             "搜索歌手：${track.artist.ifBlank { "未知歌手" }}",
                             Icons.Default.PersonSearch,
@@ -113,24 +131,6 @@ fun TrackMoreBottomSheet(
                         ) {
                             onDismiss()
                             onSearchAlbum(track.album)
-                        }
-                    }
-                    item {
-                        SheetAction("添加到下一首播放", Icons.Default.QueuePlayNext) {
-                            onDismiss()
-                            onPlayNext(track)
-                        }
-                    }
-                    item {
-                        SheetAction("加入播放列表", Icons.Default.PlaylistAdd) {
-                            onDismiss()
-                            onAddToPlaylist(track)
-                        }
-                    }
-                    item {
-                        SheetAction("添加到收藏", Icons.Default.FavoriteBorder) {
-                            onDismiss()
-                            onFavorite(track)
                         }
                     }
                     if (onRemove != null) {
