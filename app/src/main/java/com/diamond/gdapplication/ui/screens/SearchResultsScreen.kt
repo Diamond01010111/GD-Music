@@ -192,7 +192,7 @@ fun SearchResultsScreen(
 
                                 DropdownMenuItem(
                                     text = {
-                                        Text("收藏")
+                                        Text("添加到收藏")
                                     },
                                     leadingIcon = {
                                         Icon(
