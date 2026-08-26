@@ -192,7 +192,7 @@ fun SearchResultsScreen(
 
                                 DropdownMenuItem(
                                     text = {
-                                        Text("收藏到本地歌单")
+                                        Text("收藏")
                                     },
                                     leadingIcon = {
                                         Icon(

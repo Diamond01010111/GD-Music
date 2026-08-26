@@ -258,7 +258,7 @@ private fun TrackMoreMenu(
                 }
             )
             DropdownMenuItem(
-                text = { Text("收藏到本地歌单") },
+                text = { Text("收藏") },
                 leadingIcon = {
                     Icon(Icons.Default.FavoriteBorder, contentDescription = null)
                 },
