@@ -83,7 +83,7 @@ public class PlaybackNotificationManager {
 
                                     @Nullable
                                     @Override
-                                    public PendingIntent getCurrentContentIntent(
+                                    public PendingIntent createCurrentContentIntent(
                                             Player ignored
                                     ) {
                                         return contentIntent;
@@ -129,9 +129,9 @@ public class PlaybackNotificationManager {
                         )
                         .build();
 
-        notificationManager.setMediaSessionToken(
-                mediaSession.getPlatformToken()
-        );
+//        notificationManager.setMediaSessionToken(
+//                mediaSession.getPlatformToken()
+//        );
         notificationManager.setUsePlayPauseActions(false);
         notificationManager.setUsePreviousAction(false);
         notificationManager.setUseNextAction(false);
