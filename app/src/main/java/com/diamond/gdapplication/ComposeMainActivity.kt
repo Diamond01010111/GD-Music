@@ -7,13 +7,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.MusicApp
-import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 
 class ComposeMainActivity : ComponentActivity() {
@@ -30,14 +30,8 @@ class ComposeMainActivity : ComponentActivity() {
 
         api = GdMusicApi()
         playerManager = PlayerManager(this)
-
-        musicController = MusicController(
-            api,
-            playerManager
-        )
-
-        localPlaylistStore =
-            LocalPlaylistStore(this)
+        musicController = MusicController(api, playerManager)
+        localPlaylistStore = LocalPlaylistStore(this)
 
         setContent {
             MaterialTheme {
@@ -54,15 +48,11 @@ class ComposeMainActivity : ComponentActivity() {
                 }
 
                 var playMode by remember {
-                    mutableStateOf(
-                        MusicController.PlayMode.LIST_LOOP
-                    )
+                    mutableStateOf(MusicController.PlayMode.LIST_LOOP)
                 }
 
                 var queue by remember {
-                    mutableStateOf<List<Track>>(
-                        emptyList()
-                    )
+                    mutableStateOf<List<Track>>(emptyList())
                 }
 
                 var currentIndex by remember {
@@ -73,42 +63,33 @@ class ComposeMainActivity : ComponentActivity() {
                     mutableStateOf(0f)
                 }
 
+                var localPlaylists by remember {
+                    mutableStateOf(localPlaylistStore.playlists)
+                }
+
                 DisposableEffect(Unit) {
                     musicController.setListener(
                         object : MusicController.Listener {
-
-                            override fun onStatusChanged(
-                                message: String
-                            ) {
+                            override fun onStatusChanged(message: String) {
                             }
 
-                            override fun onStatusAppend(
-                                message: String
-                            ) {
+                            override fun onStatusAppend(message: String) {
                             }
 
-                            override fun onModeChanged(
-                                modeName: String
-                            ) {
+                            override fun onModeChanged(modeName: String) {
                             }
 
-                            override fun onTrackChanged(
-                                track: Track
-                            ) {
+                            override fun onTrackChanged(track: Track) {
                                 currentTrack = track
-                                artworkUrl =
-                                    track.picUrl ?: ""
+                                artworkUrl = track.picUrl ?: ""
                             }
 
-                            override fun onPlayingChanged(
-                                playing: Boolean
-                            ) {
+                            override fun onPlayingChanged(playing: Boolean) {
                                 isPlaying = playing
                             }
 
                             override fun onPlayModeChanged(
-                                newMode:
-                                MusicController.PlayMode
+                                newMode: MusicController.PlayMode
                             ) {
                                 playMode = newMode
                             }
@@ -138,7 +119,6 @@ class ComposeMainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     while (true) {
                         val player = playerManager.getPlayer()
-
                         val duration = player.duration
                         val position = player.currentPosition
 
@@ -147,14 +127,13 @@ class ComposeMainActivity : ComponentActivity() {
                             position >= 0L
                         ) {
                             (
-                                    position.toFloat() /
-                                            duration.toFloat()
-                                    ).coerceIn(0f, 1f)
+                                position.toFloat() /
+                                    duration.toFloat()
+                            ).coerceIn(0f, 1f)
                         } else {
                             0f
                         }
 
-                        // 每500毫秒刷新一次
                         delay(500)
                     }
                 }
@@ -167,6 +146,7 @@ class ComposeMainActivity : ComponentActivity() {
                     queue = queue,
                     currentIndex = currentIndex,
                     playbackProgress = playbackProgress,
+                    localPlaylists = localPlaylists,
 
                     onRequestSearch = {
                             keyword,
@@ -190,9 +170,7 @@ class ComposeMainActivity : ComponentActivity() {
                     },
 
                     onRecommendedSongClick = { keyword ->
-                        musicController.searchAndPlayFirst(
-                            keyword
-                        )
+                        musicController.searchAndPlayFirst(keyword)
                     },
 
                     onPlayPause = {
@@ -209,63 +187,93 @@ class ComposeMainActivity : ComponentActivity() {
 
                     onRemoveQueueTrack = { index ->
                         musicController.removeFromPlaylist(index)
-
-                        Toast.makeText(
-                            this@ComposeMainActivity,
-                            "已从播放列表删除",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showToast("已从播放列表删除")
                     },
 
                     onClearQueue = {
                         musicController.clearPlaylist()
-
-                        Toast.makeText(
-                            this@ComposeMainActivity,
-                            "播放列表已清空",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showToast("播放列表已清空")
                     },
 
                     onPlayNext = { track ->
                         musicController.addToPlayNext(track)
-
-                        Toast.makeText(
-                            this,
-                            "下一首播放：${track.name}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showToast("下一首播放：${track.name}")
                     },
 
                     onAddToPlaylist = { track ->
                         musicController.addToPlaylist(track)
-
-                        Toast.makeText(
-                            this,
-                            "已加入播放列表：${track.name}",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        showToast("已加入播放列表：${track.name}")
                     },
 
-                    onFavorite = { track: Track ->
-                        val added = localPlaylistStore.addToFavorite(track)
+                    onCreateLocalPlaylist = { name, track ->
+                        saveWithArtwork(track) { resolvedTrack ->
+                            val playlist = localPlaylistStore.createPlaylist(
+                                name,
+                                resolvedTrack
+                            )
+                            localPlaylists = localPlaylistStore.playlists
 
-                        val message = if (added) {
-                            "已收藏：${track.name}"
-                        } else {
-                            "已经收藏过：${track.name}"
+                            if (playlist != null) {
+                                showToast("已创建歌单并收藏：${track.name}")
+                            } else {
+                                showToast("歌单名称不能为空")
+                            }
                         }
-
-                        Toast.makeText(
-                            this@ComposeMainActivity,
-                            message,
-                            Toast.LENGTH_SHORT
-                        ).show()
                     },
 
+                    onAddToLocalPlaylist = { playlistId, track ->
+                        saveWithArtwork(track) { resolvedTrack ->
+                            val added = localPlaylistStore.addTrackToPlaylist(
+                                playlistId,
+                                resolvedTrack
+                            )
+                            localPlaylists = localPlaylistStore.playlists
+
+                            if (added) {
+                                showToast("已收藏：${track.name}")
+                            } else {
+                                showToast("歌曲已在该歌单中")
+                            }
+                        }
+                    }
                 )
             }
         }
+    }
+
+    private fun saveWithArtwork(
+        track: Track,
+        onReady: (Track) -> Unit
+    ) {
+        if (!track.picUrl.isNullOrBlank()) {
+            onReady(track)
+            return
+        }
+
+        api.getPicUrl(
+            track,
+            object : GdMusicApi.TrackCallback {
+                override fun onSuccess(updatedTrack: Track) {
+                    runOnUiThread {
+                        onReady(updatedTrack)
+                    }
+                }
+
+                override fun onError(e: Exception) {
+                    runOnUiThread {
+                        onReady(track)
+                    }
+                }
+            }
+        )
+    }
+
+    private fun showToast(message: String) {
+        Toast.makeText(
+            this@ComposeMainActivity,
+            message,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun requestTracks(
@@ -277,23 +285,17 @@ class ComposeMainActivity : ComponentActivity() {
         if (keyword.isBlank()) {
             callback(
                 Result.failure(
-                    IllegalArgumentException(
-                        "搜索关键词不能为空"
-                    )
+                    IllegalArgumentException("搜索关键词不能为空")
                 )
             )
             return
         }
 
-        if (
-            category ==
-            SearchCategory.NETEASE_PLAYLIST
-        ) {
+        if (category == SearchCategory.NETEASE_PLAYLIST) {
             callback(
                 Result.failure(
                     IllegalStateException(
-                        "GD 音乐台 API 暂不支持" +
-                                "网易云歌单搜索"
+                        "GD 音乐台 API 暂不支持网易云歌单搜索"
                     )
                 )
             )
@@ -301,17 +303,9 @@ class ComposeMainActivity : ComponentActivity() {
         }
 
         val requestSource = when (category) {
-            SearchCategory.SONG -> {
-                source
-            }
-
-            SearchCategory.ALBUM -> {
-                "${source}_album"
-            }
-
-            SearchCategory.NETEASE_PLAYLIST -> {
-                "netease"
-            }
+            SearchCategory.SONG -> source
+            SearchCategory.ALBUM -> "${source}_album"
+            SearchCategory.NETEASE_PLAYLIST -> "netease"
         }
 
         api.searchTracks(
@@ -320,28 +314,19 @@ class ComposeMainActivity : ComponentActivity() {
             SEARCH_RESULT_COUNT,
             FIRST_PAGE,
             object : GdMusicApi.SearchCallback {
-
-                override fun onSuccess(
-                    tracks: List<Track>
-                ) {
+                override fun onSuccess(tracks: List<Track>) {
                     tracks.forEach { track ->
                         track.source = source
                     }
 
                     runOnUiThread {
-                        callback(
-                            Result.success(tracks)
-                        )
+                        callback(Result.success(tracks))
                     }
                 }
 
-                override fun onError(
-                    e: Exception
-                ) {
+                override fun onError(e: Exception) {
                     runOnUiThread {
-                        callback(
-                            Result.failure(e)
-                        )
+                        callback(Result.failure(e))
                     }
                 }
             }
