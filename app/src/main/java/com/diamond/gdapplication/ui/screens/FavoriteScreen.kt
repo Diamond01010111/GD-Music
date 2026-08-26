@@ -1,38 +1,12 @@
 package com.diamond.gdapplication.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueuePlayNext
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -48,122 +22,146 @@ fun FavoriteScreen(
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
+    onCreateFavorite: (String) -> Unit,
+    onDeleteFavorite: (String) -> Unit,
     onRemoveTrack: (String, Track) -> Unit
 ) {
-    var selectedPlaylistId by remember { mutableStateOf<String?>(null) }
-    val selectedPlaylist = playlists.firstOrNull { it.id == selectedPlaylistId }
+    var selectedId by remember { mutableStateOf<String?>(null) }
+    var showCreate by remember { mutableStateOf(false) }
+    val selected = playlists.firstOrNull { it.id == selectedId }
 
-    if (selectedPlaylist != null) {
-        LocalPlaylistDetail(
-            playlist = selectedPlaylist,
-            onBack = { selectedPlaylistId = null },
+    if (selected != null) {
+        FavoriteDetail(
+            favorite = selected,
+            onBack = { selectedId = null },
             onPlayPlaylist = onPlayPlaylist,
             onPlayNext = onPlayNext,
             onAddToPlaylist = onAddToPlaylist,
             onFavorite = onFavorite,
-            onRemoveTrack = { track -> onRemoveTrack(selectedPlaylist.id, track) }
+            onDelete = {
+                onDeleteFavorite(selected.id)
+                selectedId = null
+            },
+            onRemoveTrack = { onRemoveTrack(selected.id, it) }
         )
         return
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
-    ) {
-        Text(
-            text = "本地歌单",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 12.dp)
-        )
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Text(
+                "我的收藏",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 12.dp)
+            )
 
-        if (playlists.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "还没有本地歌单。收藏歌曲时可以创建一个。",
-                    modifier = Modifier.padding(20.dp)
-                )
-            }
-            return
-        }
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(playlists.size, key = { playlists[it].id }) { index ->
-                val playlist = playlists[index]
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { selectedPlaylistId = playlist.id }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        PlaylistCover(
-                            track = playlist.coverTrack,
-                            modifier = Modifier.size(72.dp)
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f).padding(start = 14.dp)
+            if (playlists.isEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Text("还没有收藏，点击右下角按钮创建。", Modifier.padding(20.dp))
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(playlists.size, key = { playlists[it].id }) { index ->
+                        val favorite = playlists[index]
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { selectedId = favorite.id }
                         ) {
-                            Text(
-                                text = playlist.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = "${playlist.tracks.size} 首歌曲",
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FavoriteCover(favorite.coverTrack, Modifier.size(72.dp))
+                                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                                    Text(
+                                        favorite.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        "${favorite.tracks.size} 首歌曲",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(top = 4.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+
+        FloatingActionButton(
+            onClick = { showCreate = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "新建收藏")
+        }
+    }
+
+    if (showCreate) {
+        NameFavoriteDialog(
+            title = "新建收藏",
+            confirmText = "创建",
+            onDismiss = { showCreate = false },
+            onConfirm = {
+                onCreateFavorite(it)
+                showCreate = false
+            }
+        )
     }
 }
 
 @Composable
-private fun LocalPlaylistDetail(
-    playlist: LocalPlaylistStore.LocalPlaylist,
+private fun FavoriteDetail(
+    favorite: LocalPlaylistStore.LocalPlaylist,
     onBack: () -> Unit,
     onPlayPlaylist: (List<Track>, Int) -> Unit,
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
+    onDelete: () -> Unit,
     onRemoveTrack: (Track) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
-    ) {
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回本地歌单")
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回我的收藏")
             }
-            Text(text = playlist.name, style = MaterialTheme.typography.titleLarge)
+            Text(
+                favorite.name,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = { confirmDelete = true }) {
+                Icon(Icons.Default.DeleteOutline, contentDescription = "删除收藏")
+            }
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PlaylistCover(
-                track = playlist.coverTrack,
-                modifier = Modifier.size(112.dp)
-            )
-            Column(
-                modifier = Modifier.weight(1f).padding(start = 16.dp)
-            ) {
-                Text(text = playlist.name, style = MaterialTheme.typography.headlineSmall)
+            FavoriteCover(favorite.coverTrack, Modifier.size(112.dp))
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Text(favorite.name, style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    text = "${playlist.tracks.size} 首歌曲",
+                    "${favorite.tracks.size} 首歌曲",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 4.dp)
                 )
                 Button(
-                    enabled = playlist.tracks.isNotEmpty(),
-                    onClick = { onPlayPlaylist(playlist.tracks, 0) },
+                    enabled = favorite.tracks.isNotEmpty(),
+                    onClick = { onPlayPlaylist(favorite.tracks, 0) },
                     modifier = Modifier.padding(top = 12.dp)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
@@ -172,51 +170,94 @@ private fun LocalPlaylistDetail(
             }
         }
 
-        if (playlist.tracks.isEmpty()) {
-            Text(text = "歌单中还没有歌曲", modifier = Modifier.padding(20.dp))
-            return
-        }
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(
-                items = playlist.tracks,
-                key = { index, track -> "${track.source}-${track.id}-$index" }
-            ) { index, track ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onPlayPlaylist(playlist.tracks, index) }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+        if (favorite.tracks.isEmpty()) {
+            Text("收藏中还没有歌曲", Modifier.padding(20.dp))
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(
+                    favorite.tracks,
+                    key = { index, track -> "${track.source}-${track.id}-$index" }
+                ) { index, track ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onPlayPlaylist(favorite.tracks, index) }
                     ) {
-                        PlaylistCover(track = track, modifier = Modifier.size(52.dp))
-                        Column(
-                            modifier = Modifier.weight(1f).padding(start = 12.dp)
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = track.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = track.artist,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    track.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    track.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1
+                                )
+                            }
+                            TrackMoreMenu(
+                                track,
+                                onPlayNext,
+                                onAddToPlaylist,
+                                onFavorite,
+                                onRemoveTrack
                             )
                         }
-                        TrackMoreMenu(
-                            track = track,
-                            onPlayNext = onPlayNext,
-                            onAddToPlaylist = onAddToPlaylist,
-                            onFavorite = onFavorite,
-                            onRemoveTrack = onRemoveTrack
-                        )
                     }
                 }
             }
         }
     }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("删除收藏？") },
+            text = { Text("确定删除“${favorite.name}”吗？其中的歌曲也会从该收藏中移除。") },
+            confirmButton = {
+                TextButton(onClick = onDelete) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun NameFavoriteDialog(
+    title: String,
+    confirmText: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("收藏名称") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = { onConfirm(name.trim()) }
+            ) { Text(confirmText) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable
@@ -233,10 +274,7 @@ private fun TrackMoreMenu(
         IconButton(onClick = { expanded = true }) {
             Icon(Icons.Default.MoreVert, contentDescription = "更多")
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text("添加到下一首播放") },
                 leadingIcon = {
@@ -258,7 +296,7 @@ private fun TrackMoreMenu(
                 }
             )
             DropdownMenuItem(
-                text = { Text("收藏到本地歌单") },
+                text = { Text("添加到收藏") },
                 leadingIcon = {
                     Icon(Icons.Default.FavoriteBorder, contentDescription = null)
                 },
@@ -282,32 +320,27 @@ private fun TrackMoreMenu(
 }
 
 @Composable
-private fun PlaylistCover(
+private fun FavoriteCover(
     track: Track?,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier.aspectRatio(1f)) {
+    Card(modifier.aspectRatio(1f)) {
         val coverUrl = track?.picUrl.orEmpty()
-
         if (coverUrl.isNotBlank() && coverUrl != "null") {
             AsyncImage(
                 model = coverUrl,
-                contentDescription = track?.name ?: "歌单封面",
+                contentDescription = track?.name ?: "收藏封面",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.LibraryMusic,
-                    contentDescription = "默认歌单封面",
+                    Icons.Default.LibraryMusic,
+                    contentDescription = "默认收藏封面",
                     modifier = Modifier.size(32.dp)
                 )
             }
         }
     }
 }
-
