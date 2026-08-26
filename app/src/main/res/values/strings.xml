@@ -2,4 +2,7 @@
     <string name="app_name">GD Application</string>
     <string name="playback_channel_name">音乐播放</string>
     <string name="playback_channel_description">显示当前歌曲与播放控制</string>
+    <string name="auto_favorites">收藏</string>
+    <string name="auto_netease_playlists">网易云歌单</string>
+    <string name="auto_import_on_phone">请先在手机端导入网易云歌单</string>
 </resources>
