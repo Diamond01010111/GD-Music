@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.session.MediaSession;
 
 import java.util.Arrays;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@UnstableApi
 public class PlaybackNotificationManager {
 
     private static final int NOTIFICATION_ID = 1001;
