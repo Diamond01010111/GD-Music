@@ -8,16 +8,22 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -30,8 +36,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import coil3.compose.AsyncImage
 import com.diamond.gdapplication.LocalPlaylistStore
 import com.diamond.gdapplication.MusicController
 import com.diamond.gdapplication.Track
@@ -76,7 +87,9 @@ fun MusicApp(
     onClearQueue: () -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onCreateLocalPlaylist: (String, Track) -> Unit,
+    onCreateEmptyFavorite: (String) -> Unit,
     onAddToLocalPlaylist: (String, Track) -> Unit,
+    onDeleteFavorite: (String) -> Unit,
     onRemoveLocalPlaylistTrack: (String, Track) -> Unit,
     onPlayNext: (Track) -> Unit
 ) {
@@ -224,6 +237,8 @@ fun MusicApp(
                         onFavorite = { track ->
                             pendingFavoriteTrack = track
                         },
+                        onCreateFavorite = onCreateEmptyFavorite,
+                        onDeleteFavorite = onDeleteFavorite,
                         onRemoveTrack = onRemoveLocalPlaylistTrack
                     )
                 }
@@ -314,7 +329,7 @@ fun MusicApp(
     }
 
     pendingFavoriteTrack?.let { track ->
-        AddToLocalPlaylistDialog(
+        AddToFavoriteSheet(
             track = track,
             playlists = localPlaylists,
             onDismiss = {
@@ -332,90 +347,149 @@ fun MusicApp(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddToLocalPlaylistDialog(
+private fun AddToFavoriteSheet(
     track: Track,
     playlists: List<LocalPlaylistStore.LocalPlaylist>,
     onDismiss: () -> Unit,
     onCreatePlaylist: (String) -> Unit,
     onSelectPlaylist: (String) -> Unit
 ) {
-    var newPlaylistName by remember(track.id) {
-        mutableStateOf("")
-    }
+    var showCreateDialog by remember(track.id) { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = false
+    )
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = {
-            Text("收藏到本地歌单")
-        },
-        text = {
-            Column {
-                Text(
-                    text = track.name,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+        sheetState = sheetState
+    ) {
+        Text(
+            text = "添加到收藏",
+            style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        Text(
+            text = track.name,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+        )
 
-                if (playlists.isNotEmpty()) {
-                    Text("选择已有歌单")
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 220.dp)
-                            .padding(top = 4.dp)
-                    ) {
-                        items(
-                            items = playlists,
-                            key = { it.id }
-                        ) { playlist ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        onSelectPlaylist(playlist.id)
-                                    }
-                                    .padding(vertical = 12.dp)
-                            ) {
-                                Text(
-                                    text = playlist.name,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text("${playlist.tracks.size} 首")
-                            }
-                        }
-                    }
-                }
-
-                OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = {
-                        newPlaylistName = it
-                    },
-                    label = {
-                        Text("新歌单名称")
-                    },
-                    singleLine = true,
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .padding(top = 8.dp, bottom = 24.dp)
+        ) {
+            item(key = "create-favorite") {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp)
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = newPlaylistName.isNotBlank(),
-                onClick = {
-                    onCreatePlaylist(newPlaylistName.trim())
+                        .clickable { showCreateDialog = true }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.AddCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(52.dp)
+                    )
+                    Text(
+                        text = "新建收藏",
+                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(start = 14.dp)
+                    )
                 }
-            ) {
-                Text("创建并收藏")
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
+
+            items(
+                items = playlists,
+                key = { it.id }
+            ) { favorite ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectPlaylist(favorite.id) }
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FavoriteSheetCover(
+                        track = favorite.coverTrack,
+                        modifier = Modifier.size(52.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 14.dp)
+                    ) {
+                        Text(
+                            favorite.name,
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            maxLines = 1
+                        )
+                        Text(
+                            "${favorite.tracks.size} 首歌曲",
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
-    )
+    }
+
+    if (showCreateDialog) {
+        var name by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("新建收藏") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("收藏名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = name.isNotBlank(),
+                    onClick = { onCreatePlaylist(name.trim()) }
+                ) {
+                    Text("创建并收藏")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun FavoriteSheetCover(
+    track: Track?,
+    modifier: Modifier = Modifier
+) {
+    val coverUrl = track?.picUrl.orEmpty()
+
+    if (coverUrl.isNotBlank() && coverUrl != "null") {
+        AsyncImage(
+            model = coverUrl,
+            contentDescription = track?.name ?: "收藏封面",
+            contentScale = ContentScale.Crop,
+            modifier = modifier.clip(RoundedCornerShape(8.dp))
+        )
+    } else {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.MusicNote, contentDescription = null)
+        }
+    }
 }
