@@ -263,18 +263,18 @@ fun MusicApp(
                         onFavorite = { track ->
                             pendingFavoriteTrack = track
                         },
-                        onSearchArtist = { artist ->
+                        onSearchArtist = { artist, source ->
                             executeSearch(
                                 artist,
                                 SearchCategory.SONG,
-                                resultSource
+                                source
                             )
                         },
-                        onSearchAlbum = { album ->
+                        onSearchAlbum = { album, source ->
                             executeSearch(
                                 album,
                                 SearchCategory.ALBUM,
-                                resultSource
+                                source
                             )
                         },
                         onCreateFavorite = onCreateEmptyFavorite,
