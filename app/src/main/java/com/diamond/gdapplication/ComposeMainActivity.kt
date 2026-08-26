@@ -1,5 +1,8 @@
 package com.diamond.gdapplication
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -22,6 +25,7 @@ class ComposeMainActivity : ComponentActivity() {
     private lateinit var playerManager: PlayerManager
     private lateinit var musicController: MusicController
     private lateinit var localPlaylistStore: LocalPlaylistStore
+    private lateinit var playbackNotificationManager: PlaybackNotificationManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +36,12 @@ class ComposeMainActivity : ComponentActivity() {
         playerManager = PlayerManager(this)
         musicController = MusicController(api, playerManager)
         localPlaylistStore = LocalPlaylistStore(this)
+        playbackNotificationManager = PlaybackNotificationManager(
+            this,
+            musicController,
+            playerManager.player
+        )
+        requestNotificationPermission()
 
         setContent {
             MaterialTheme {
@@ -88,16 +98,19 @@ class ComposeMainActivity : ComponentActivity() {
                             override fun onTrackChanged(track: Track) {
                                 currentTrack = track
                                 artworkUrl = track.picUrl ?: ""
+                                playbackNotificationManager.invalidate()
                             }
 
                             override fun onPlayingChanged(playing: Boolean) {
                                 isPlaying = playing
+                                playbackNotificationManager.invalidate()
                             }
 
                             override fun onPlayModeChanged(
                                 newMode: MusicController.PlayMode
                             ) {
                                 playMode = newMode
+                                playbackNotificationManager.invalidate()
                             }
 
                             override fun onQueueChanged(
@@ -113,6 +126,7 @@ class ComposeMainActivity : ComponentActivity() {
                                 artworkUrl = ""
                                 isPlaying = false
                                 playbackProgress = 0f
+                                playbackNotificationManager.invalidate()
                             }
                         }
                     )
@@ -355,6 +369,19 @@ class ComposeMainActivity : ComponentActivity() {
         ).show()
     }
 
+    private fun requestNotificationPermission() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST
+            )
+        }
+    }
+
     private fun requestTracks(
         keyword: String,
         category: SearchCategory,
@@ -419,6 +446,10 @@ class ComposeMainActivity : ComponentActivity() {
             musicController.setListener(null)
         }
 
+        if (::playbackNotificationManager.isInitialized) {
+            playbackNotificationManager.release()
+        }
+
         if (::playerManager.isInitialized) {
             playerManager.release()
         }
@@ -427,5 +458,6 @@ class ComposeMainActivity : ComponentActivity() {
     private companion object {
         const val SEARCH_RESULT_COUNT = 30
         const val FIRST_PAGE = 1
+        const val NOTIFICATION_PERMISSION_REQUEST = 1001
     }
 }

@@ -457,7 +457,7 @@ public class MusicController {
     }
 
 
-    private String getPlayModeName() {
+    public String getPlayModeName() {
         if (playMode == PlayMode.SINGLE_LOOP) {
             return "单曲循环";
         }
@@ -467,6 +467,17 @@ public class MusicController {
         }
 
         return "自动循环";
+    }
+
+    public Track getCurrentTrack() {
+        if (
+                currentIndex < 0 ||
+                currentIndex >= playlist.size()
+        ) {
+            return null;
+        }
+
+        return playlist.get(currentIndex);
     }
 
     private void setStatus(String message) {
