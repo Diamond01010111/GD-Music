@@ -45,7 +45,9 @@ public class PlaybackNotificationManager {
         Context appContext = context.getApplicationContext();
         this.musicController = musicController;
         this.player = player;
-        this.mediaSession = new MediaSession.Builder(appContext, player).build();
+        this.mediaSession = new MediaSession.Builder(appContext, player)
+                .setId("phone_playback")
+                .build();
 
         Intent openAppIntent = new Intent(appContext, ComposeMainActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
