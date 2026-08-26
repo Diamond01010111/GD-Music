@@ -67,6 +67,12 @@ class ComposeMainActivity : ComponentActivity() {
                     mutableStateOf(localPlaylistStore.playlists)
                 }
 
+                LaunchedEffect(Unit) {
+                    refreshMissingLocalArtwork {
+                        localPlaylists = localPlaylistStore.playlists
+                    }
+                }
+
                 DisposableEffect(Unit) {
                     musicController.setListener(
                         object : MusicController.Listener {
@@ -235,9 +241,57 @@ class ComposeMainActivity : ComponentActivity() {
                                 showToast("歌曲已在该歌单中")
                             }
                         }
+                    },
+
+                    onRemoveLocalPlaylistTrack = { playlistId, track ->
+                        val removed = localPlaylistStore.removeTrackFromPlaylist(
+                            playlistId,
+                            track
+                        )
+                        localPlaylists = localPlaylistStore.playlists
+
+                        if (removed) {
+                            showToast("已移出当前收藏：${track.name}")
+                        } else {
+                            showToast("移出收藏失败")
+                        }
                     }
                 )
             }
+        }
+    }
+
+    private fun refreshMissingLocalArtwork(
+        onChanged: () -> Unit
+    ) {
+        localPlaylistStore.playlists.forEach { playlist ->
+            playlist.tracks
+                .filter {
+                    it.picUrl.isNullOrBlank() || it.picUrl == "null"
+                }
+                .forEach { track ->
+                    api.getPicUrl(
+                        track,
+                        object : GdMusicApi.TrackCallback {
+                            override fun onSuccess(updatedTrack: Track) {
+                                runOnUiThread {
+                                    if (
+                                        localPlaylistStore.updateTrackInPlaylist(
+                                            playlist.id,
+                                            updatedTrack
+                                        )
+                                    ) {
+                                        onChanged()
+                                    }
+                                }
+                            }
+
+                            override fun onError(e: Exception) {
+                                // 保留默认封面，下次启动时再次尝试。
+                            }
+                        }
+                    )
+                }
         }
     }
 
