@@ -1,0 +1,218 @@
+package com.diamond.gdapplication.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import com.diamond.gdapplication.Track
+import com.diamond.gdapplication.model.AppPage
+import com.diamond.gdapplication.model.SearchCategory
+import com.diamond.gdapplication.ui.components.MiniPlayer
+import com.diamond.gdapplication.ui.screens.FavoriteScreen
+import com.diamond.gdapplication.ui.screens.HomeScreen
+import com.diamond.gdapplication.ui.screens.NeteasePlaylistScreen
+import com.diamond.gdapplication.ui.screens.SearchResultsScreen
+import com.diamond.gdapplication.ui.screens.SearchScreen
+
+@Composable
+fun MusicApp(
+    playerStatus: String,
+    onRequestSearch: (
+        keyword: String,
+        category: SearchCategory,
+        source: String,
+        callback: (Result<List<Track>>) -> Unit
+    ) -> Unit,
+    onPlayResults: (List<Track>, Int) -> Unit,
+    onRecommendedSongClick: (String) -> Unit,
+    onPlayPause: () -> Unit
+) {
+    var currentPage by remember {
+        mutableStateOf(AppPage.HOME)
+    }
+
+    var resultKeyword by remember {
+        mutableStateOf("")
+    }
+
+    var resultCategory by remember {
+        mutableStateOf(SearchCategory.SONG)
+    }
+
+    var resultSource by remember {
+        mutableStateOf("netease")
+    }
+
+    var resultTracks by remember {
+        mutableStateOf<List<Track>>(emptyList())
+    }
+
+    var isSearching by remember {
+        mutableStateOf(false)
+    }
+
+    var searchError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val showNavigationBar = currentPage == AppPage.HOME ||
+            currentPage == AppPage.FAVORITE ||
+            currentPage == AppPage.NETEASE_PLAYLIST
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.safeDrawing,
+
+        bottomBar = {
+            Column {
+                MiniPlayer(
+                    status = playerStatus,
+                    onPlayPause = onPlayPause
+                )
+
+                if (showNavigationBar) {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = currentPage == AppPage.HOME,
+                            onClick = {
+                                currentPage = AppPage.HOME
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Home,
+                                    contentDescription = "主页"
+                                )
+                            },
+                            label = {
+                                Text("主页")
+                            }
+                        )
+
+                        NavigationBarItem(
+                            selected = currentPage == AppPage.FAVORITE,
+                            onClick = {
+                                currentPage = AppPage.FAVORITE
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "收藏"
+                                )
+                            },
+                            label = {
+                                Text("收藏")
+                            }
+                        )
+
+                        NavigationBarItem(
+                            selected = currentPage == AppPage.NETEASE_PLAYLIST,
+                            onClick = {
+                                currentPage = AppPage.NETEASE_PLAYLIST
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.LibraryMusic,
+                                    contentDescription = "网易歌单"
+                                )
+                            },
+                            label = {
+                                Text("网易歌单")
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+        ) {
+            when (currentPage) {
+                AppPage.HOME -> HomeScreen(
+                    onOpenSearch = {
+                        searchError = null
+                        currentPage = AppPage.SEARCH
+                    },
+                    onSongClick = onRecommendedSongClick
+                )
+
+                AppPage.FAVORITE -> FavoriteScreen()
+
+                AppPage.NETEASE_PLAYLIST -> NeteasePlaylistScreen()
+
+                AppPage.SEARCH -> SearchScreen(
+                    isSearching = isSearching,
+                    errorMessage = searchError,
+
+                    onBack = {
+                        currentPage = AppPage.HOME
+                    },
+
+                    onSearch = { keyword, category, source ->
+                        isSearching = true
+                        searchError = null
+
+                        onRequestSearch(
+                            keyword,
+                            category,
+                            source
+                        ) { result ->
+                            isSearching = false
+
+                            result.onSuccess { tracks ->
+                                resultKeyword = keyword
+                                resultCategory = category
+                                resultSource = source
+                                resultTracks = tracks
+                                currentPage = AppPage.SEARCH_RESULTS
+                            }
+
+                            result.onFailure { error ->
+                                searchError = error.message ?: "搜索失败"
+                            }
+                        }
+                    }
+                )
+
+                AppPage.SEARCH_RESULTS -> SearchResultsScreen(
+                    keyword = resultKeyword,
+                    category = resultCategory,
+                    source = resultSource,
+                    tracks = resultTracks,
+
+                    onBack = {
+                        currentPage = AppPage.SEARCH
+                    },
+
+                    onTrackClick = { index ->
+                        onPlayResults(
+                            resultTracks,
+                            index
+                        )
+                    }
+                )
+            }
+        }
+    }
+}

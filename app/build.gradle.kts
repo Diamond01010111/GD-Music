@@ -1,13 +1,11 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.compose.compiler)
 }
-
 android {
     namespace = "com.diamond.gdapplication"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version = release(37)
     }
 
     defaultConfig {
@@ -31,6 +29,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
@@ -44,5 +45,14 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+
+    val composeBom = platform("androidx.compose:compose-bom:2026.08.00")
+    implementation(composeBom)
+    androidTestImplementation(composeBom)
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 
 }

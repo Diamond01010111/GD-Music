@@ -14,7 +14,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GDApplication" >
         <activity
-            android:name=".MainActivity"
+            android:name=".ComposeMainActivity"
             android:exported="true">
 
             <intent-filter>
