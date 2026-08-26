@@ -6,10 +6,13 @@ import android.os.Looper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import androidx.media3.common.Player;
+
+
 
 public class MusicController {
 
-    private enum PlayMode {
+    public enum PlayMode {
         LIST_LOOP,
         SINGLE_LOOP,
         RANDOM
@@ -19,6 +22,24 @@ public class MusicController {
         void onStatusChanged(String message);
         void onStatusAppend(String message);
         void onModeChanged(String modeName);
+
+        default void onTrackChanged(Track track) {
+        }
+
+        default void onPlayingChanged(boolean isPlaying) {
+        }
+
+        default void onQueueChanged(
+                List<Track> tracks,
+                int currentIndex
+        ) {
+        }
+
+        default void onPlayModeChanged(PlayMode playMode) {
+        }
+
+        default void onTrackCleared() {
+        }
     }
 
     private final GdMusicApi api;
@@ -41,6 +62,17 @@ public class MusicController {
 
         this.playerManager.setPlaybackEventListener(() -> {
             mainHandler.post(this::handleTrackEnded);
+        });
+
+        playerManager.getPlayer().addListener(new Player.Listener() {
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                mainHandler.post(() -> {
+                    if (listener != null) {
+                        listener.onPlayingChanged(isPlaying);
+                    }
+                });
+            }
         });
     }
 
@@ -131,12 +163,22 @@ public class MusicController {
             return;
         }
 
+        // 当前没有播放队列时，直接播放这首歌
         if (playlist.isEmpty() || currentIndex < 0) {
             playlist.clear();
             playlist.add(track);
             currentIndex = 0;
 
-            setStatus("播放队列为空，直接播放：\n" + track.name + "\n" + track.artist);
+            // 通知 Compose 刷新播放列表
+            notifyQueueChanged();
+
+            setStatus(
+                    "播放队列为空，直接播放：\n"
+                            + track.name
+                            + "\n"
+                            + track.artist
+            );
+
             playTrackAtCurrentIndex();
             return;
         }
@@ -149,7 +191,15 @@ public class MusicController {
 
         playlist.add(insertIndex, track);
 
-        appendStatus("\n\n已加入下一首播放：\n" + track.name + "\n" + track.artist);
+        // 就加在这里：歌曲成功插入之后
+        notifyQueueChanged();
+
+        appendStatus(
+                "\n\n已加入下一首播放：\n"
+                        + track.name
+                        + "\n"
+                        + track.artist
+        );
     }
 
     public void playPrevious() {
@@ -177,21 +227,42 @@ public class MusicController {
         }
     }
 
-    public void switchPlayMode() {
-        if (playMode == PlayMode.LIST_LOOP) {
-            playMode = PlayMode.SINGLE_LOOP;
-        } else if (playMode == PlayMode.SINGLE_LOOP) {
-            playMode = PlayMode.RANDOM;
-        } else {
-            playMode = PlayMode.LIST_LOOP;
+    public void setPlayMode(PlayMode newMode) {
+        if (newMode == null) {
+            return;
         }
 
-        if (listener != null) {
-            mainHandler.post(() -> {
-                listener.onModeChanged(getPlayModeName());
-                listener.onStatusAppend("\n\n已切换播放模式：" + getPlayModeName());
-            });
+        playMode = newMode;
+
+        // 保存快照，避免异步通知时值发生改变
+        PlayMode modeSnapshot = playMode;
+        String modeNameSnapshot = getPlayModeName();
+
+        mainHandler.post(() -> {
+            if (listener != null) {
+                listener.onModeChanged(modeNameSnapshot);
+                listener.onPlayModeChanged(modeSnapshot);
+                listener.onStatusAppend(
+                        "\n\n已切换播放模式："
+                                + modeNameSnapshot
+                );
+            }
+        });
+    }
+
+    public void switchPlayMode() {
+        PlayMode nextMode;
+
+        if (playMode == PlayMode.LIST_LOOP) {
+            nextMode = PlayMode.SINGLE_LOOP;
+        } else if (playMode == PlayMode.SINGLE_LOOP) {
+            nextMode = PlayMode.RANDOM;
+        } else {
+            nextMode = PlayMode.LIST_LOOP;
         }
+
+        // 必须通过 setPlayMode 修改
+        setPlayMode(nextMode);
     }
 
     private void playTrackAtCurrentIndex() {
@@ -206,6 +277,8 @@ public class MusicController {
         }
 
         Track track = playlist.get(currentIndex);
+        notifyTrackChanged(track);
+        notifyQueueChanged();
 
         if (hasValidCachedAudioUrl(track)) {
             mainHandler.post(() -> {
@@ -292,8 +365,13 @@ public class MusicController {
         api.getPicUrl(track, new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track updatedTrack) {
-                if (updatedTrack.picUrl != null && !updatedTrack.picUrl.isEmpty()) {
-                    appendStatus("\n\n专辑图 URL:\n" + updatedTrack.picUrl);
+                notifyTrackChanged(updatedTrack);
+
+                if (updatedTrack.picUrl != null
+                        && !updatedTrack.picUrl.isEmpty()) {
+                    appendStatus(
+                            "\n\n专辑图 URL:\n" + updatedTrack.picUrl
+                    );
                 }
             }
 
@@ -415,6 +493,7 @@ public class MusicController {
         return currentIndex;
     }
 
+
     public void playAtIndex(int index) {
         if (playlist.isEmpty()) {
             setStatus("播放队列为空");
@@ -428,6 +507,24 @@ public class MusicController {
 
         currentIndex = index;
         playTrackAtCurrentIndex();
+    }
+
+    public void addToPlaylist(Track track) {
+        if (track == null) {
+            setStatus("歌曲为空，无法加入播放列表");
+            return;
+        }
+
+        playlist.add(track);
+
+        notifyQueueChanged();
+
+        appendStatus(
+                "\n\n已加入播放列表：\n"
+                        + track.name
+                        + "\n"
+                        + track.artist
+        );
     }
 
     public void setAudioQuality(int audioQuality) {
@@ -453,5 +550,110 @@ public class MusicController {
 
     public boolean isShowDetailedInfo() {
         return showDetailedInfo;
+    }
+
+    private void notifyTrackChanged(Track track) {
+        if (listener != null) {
+            mainHandler.post(() -> {
+                listener.onTrackChanged(track);
+            });
+        }
+    }
+
+    private void notifyQueueChanged() {
+        if (listener != null) {
+            List<Track> snapshot = new ArrayList<>(playlist);
+            int indexSnapshot = currentIndex;
+
+            mainHandler.post(() -> {
+                listener.onQueueChanged(
+                        snapshot,
+                        indexSnapshot
+                );
+            });
+        }
+    }
+
+    public void clearPlaylist() {
+        playlist.clear();
+        currentIndex = -1;
+
+        playerManager.stopAndClear();
+
+        notifyQueueChanged();
+        notifyTrackCleared();
+
+        setStatus("播放列表已清空");
+    }
+
+    public void removeFromPlaylist(int index) {
+        if (index < 0 || index >= playlist.size()) {
+            setStatus("无法删除歌曲，序号不合法：" + index);
+            return;
+        }
+
+        boolean removingCurrentTrack =
+                index == currentIndex;
+
+        Track removedTrack = playlist.remove(index);
+
+        // 删除后队列为空
+        if (playlist.isEmpty()) {
+            currentIndex = -1;
+
+            playerManager.stopAndClear();
+
+            notifyQueueChanged();
+            notifyTrackCleared();
+
+            setStatus(
+                    "已删除："
+                            + removedTrack.name
+                            + "\n播放列表已为空"
+            );
+
+            return;
+        }
+
+        // 当前还没有开始播放歌曲
+        if (currentIndex < 0) {
+            notifyQueueChanged();
+            return;
+        }
+
+        // 删除的是当前歌曲之前的歌曲
+        if (index < currentIndex) {
+            currentIndex--;
+
+            notifyQueueChanged();
+            return;
+        }
+
+        // 删除的就是当前正在播放的歌曲
+        if (removingCurrentTrack) {
+            /*
+             * 删除中间歌曲后，原本的下一首会移动到相同位置。
+             * 删除最后一首后，从列表第一首开始。
+             */
+            if (currentIndex >= playlist.size()) {
+                currentIndex = 0;
+            }
+
+            playTrackAtCurrentIndex();
+            return;
+        }
+
+        // 删除的是当前歌曲之后的歌曲
+        notifyQueueChanged();
+    }
+
+    private void notifyTrackCleared() {
+        if (listener != null) {
+            mainHandler.post(() -> {
+                if (listener != null) {
+                    listener.onTrackCleared();
+                }
+            });
+        }
     }
 }

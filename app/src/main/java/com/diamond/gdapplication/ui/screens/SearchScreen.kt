@@ -60,9 +60,19 @@ fun SearchScreen(
 
     val sources = remember {
         listOf(
-            MusicSource("网易云", "netease"),
-            MusicSource("JOOX", "joox"),
-            MusicSource("哔哩哔哩", "bilibili")
+            // 当前推荐稳定源
+            MusicSource("网易云", "netease", true),
+            MusicSource("JOOX", "joox", true),
+            MusicSource("哔哩哔哩", "bilibili", true),
+
+            // 其他支持但可能暂不可用的源
+            MusicSource("腾讯音乐", "tencent", false),
+            MusicSource("酷我", "kuwo", false),
+            MusicSource("Tidal", "tidal", false),
+            MusicSource("Qobuz", "qobuz", false),
+            MusicSource("Apple Music", "apple", false),
+            MusicSource("YouTube Music", "ytmusic", false),
+            MusicSource("Spotify", "spotify", false)
         )
     }
 
@@ -194,7 +204,7 @@ fun SearchScreen(
                             sourceMenuExpanded = true
                         },
                         label = {
-                            Text("音乐源：${selectedSource.label}")
+                            Text("源：${selectedSource.label}")
                         }
                     )
 
@@ -207,7 +217,17 @@ fun SearchScreen(
                         sources.forEach { source ->
                             DropdownMenuItem(
                                 text = {
-                                    Text(source.label)
+                                    Column {
+                                        Text(source.label)
+
+                                        if (source.recommended) {
+                                            Text(
+                                                text = "推荐稳定源",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
                                 },
                                 onClick = {
                                     selectedSourceValue = source.value

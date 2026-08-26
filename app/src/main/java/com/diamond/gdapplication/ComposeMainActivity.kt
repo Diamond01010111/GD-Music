@@ -1,6 +1,7 @@
 package com.diamond.gdapplication
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,12 +13,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.MusicApp
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 
 class ComposeMainActivity : ComponentActivity() {
 
     private lateinit var api: GdMusicApi
     private lateinit var playerManager: PlayerManager
     private lateinit var musicController: MusicController
+    private lateinit var localPlaylistStore: LocalPlaylistStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,31 +30,102 @@ class ComposeMainActivity : ComponentActivity() {
 
         api = GdMusicApi()
         playerManager = PlayerManager(this)
+
         musicController = MusicController(
             api,
             playerManager
         )
 
+        localPlaylistStore =
+            LocalPlaylistStore(this)
+
         setContent {
             MaterialTheme {
-                var playerStatus by remember {
-                    mutableStateOf("暂未播放")
+                var currentTrack by remember {
+                    mutableStateOf<Track?>(null)
+                }
+
+                var artworkUrl by remember {
+                    mutableStateOf("")
+                }
+
+                var isPlaying by remember {
+                    mutableStateOf(false)
+                }
+
+                var playMode by remember {
+                    mutableStateOf(
+                        MusicController.PlayMode.LIST_LOOP
+                    )
+                }
+
+                var queue by remember {
+                    mutableStateOf<List<Track>>(
+                        emptyList()
+                    )
+                }
+
+                var currentIndex by remember {
+                    mutableStateOf(-1)
+                }
+
+                var playbackProgress by remember {
+                    mutableStateOf(0f)
                 }
 
                 DisposableEffect(Unit) {
                     musicController.setListener(
                         object : MusicController.Listener {
 
-                            override fun onStatusChanged(message: String) {
-                                playerStatus = message
+                            override fun onStatusChanged(
+                                message: String
+                            ) {
                             }
 
-                            override fun onStatusAppend(message: String) {
-                                playerStatus += message
+                            override fun onStatusAppend(
+                                message: String
+                            ) {
                             }
 
-                            override fun onModeChanged(modeName: String) {
-                                // 后续可以显示播放模式。
+                            override fun onModeChanged(
+                                modeName: String
+                            ) {
+                            }
+
+                            override fun onTrackChanged(
+                                track: Track
+                            ) {
+                                currentTrack = track
+                                artworkUrl =
+                                    track.picUrl ?: ""
+                            }
+
+                            override fun onPlayingChanged(
+                                playing: Boolean
+                            ) {
+                                isPlaying = playing
+                            }
+
+                            override fun onPlayModeChanged(
+                                newMode:
+                                MusicController.PlayMode
+                            ) {
+                                playMode = newMode
+                            }
+
+                            override fun onQueueChanged(
+                                tracks: List<Track>,
+                                index: Int
+                            ) {
+                                queue = tracks
+                                currentIndex = index
+                            }
+
+                            override fun onTrackCleared() {
+                                currentTrack = null
+                                artworkUrl = ""
+                                isPlaying = false
+                                playbackProgress = 0f
                             }
                         }
                     )
@@ -60,10 +135,45 @@ class ComposeMainActivity : ComponentActivity() {
                     }
                 }
 
-                MusicApp(
-                    playerStatus = playerStatus,
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        val player = playerManager.getPlayer()
 
-                    onRequestSearch = { keyword, category, source, callback ->
+                        val duration = player.duration
+                        val position = player.currentPosition
+
+                        playbackProgress = if (
+                            duration > 0L &&
+                            position >= 0L
+                        ) {
+                            (
+                                    position.toFloat() /
+                                            duration.toFloat()
+                                    ).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+
+                        // 每500毫秒刷新一次
+                        delay(500)
+                    }
+                }
+
+                MusicApp(
+                    nowPlayingTrack = currentTrack,
+                    artworkUrl = artworkUrl,
+                    isPlaying = isPlaying,
+                    playMode = playMode,
+                    queue = queue,
+                    currentIndex = currentIndex,
+                    playbackProgress = playbackProgress,
+
+                    onRequestSearch = {
+                            keyword,
+                            category,
+                            source,
+                            callback ->
+
                         requestTracks(
                             keyword = keyword,
                             category = category,
@@ -80,12 +190,79 @@ class ComposeMainActivity : ComponentActivity() {
                     },
 
                     onRecommendedSongClick = { keyword ->
-                        musicController.searchAndPlayFirst(keyword)
+                        musicController.searchAndPlayFirst(
+                            keyword
+                        )
                     },
 
                     onPlayPause = {
                         musicController.playOrPause()
-                    }
+                    },
+
+                    onSwitchPlayMode = {
+                        musicController.switchPlayMode()
+                    },
+
+                    onQueueTrackClick = { index ->
+                        musicController.playAtIndex(index)
+                    },
+
+                    onRemoveQueueTrack = { index ->
+                        musicController.removeFromPlaylist(index)
+
+                        Toast.makeText(
+                            this@ComposeMainActivity,
+                            "已从播放列表删除",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+
+                    onClearQueue = {
+                        musicController.clearPlaylist()
+
+                        Toast.makeText(
+                            this@ComposeMainActivity,
+                            "播放列表已清空",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+
+                    onPlayNext = { track ->
+                        musicController.addToPlayNext(track)
+
+                        Toast.makeText(
+                            this,
+                            "下一首播放：${track.name}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+
+                    onAddToPlaylist = { track ->
+                        musicController.addToPlaylist(track)
+
+                        Toast.makeText(
+                            this,
+                            "已加入播放列表：${track.name}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+
+                    onFavorite = { track: Track ->
+                        val added = localPlaylistStore.addToFavorite(track)
+
+                        val message = if (added) {
+                            "已收藏：${track.name}"
+                        } else {
+                            "已经收藏过：${track.name}"
+                        }
+
+                        Toast.makeText(
+                            this@ComposeMainActivity,
+                            message,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+
                 )
             }
         }
@@ -97,11 +274,26 @@ class ComposeMainActivity : ComponentActivity() {
         source: String,
         callback: (Result<List<Track>>) -> Unit
     ) {
-        if (category == SearchCategory.NETEASE_PLAYLIST) {
+        if (keyword.isBlank()) {
+            callback(
+                Result.failure(
+                    IllegalArgumentException(
+                        "搜索关键词不能为空"
+                    )
+                )
+            )
+            return
+        }
+
+        if (
+            category ==
+            SearchCategory.NETEASE_PLAYLIST
+        ) {
             callback(
                 Result.failure(
                     IllegalStateException(
-                        "GD 音乐台 API 暂不支持网易云歌单搜索，请使用底部“网易歌单”页面粘贴分享链接。"
+                        "GD 音乐台 API 暂不支持" +
+                                "网易云歌单搜索"
                     )
                 )
             )
@@ -109,20 +301,29 @@ class ComposeMainActivity : ComponentActivity() {
         }
 
         val requestSource = when (category) {
-            SearchCategory.SONG -> source
-            SearchCategory.ALBUM -> "${source}_album"
-            SearchCategory.NETEASE_PLAYLIST -> "netease"
+            SearchCategory.SONG -> {
+                source
+            }
+
+            SearchCategory.ALBUM -> {
+                "${source}_album"
+            }
+
+            SearchCategory.NETEASE_PLAYLIST -> {
+                "netease"
+            }
         }
 
         api.searchTracks(
             keyword,
             requestSource,
-            30,
-            1,
+            SEARCH_RESULT_COUNT,
+            FIRST_PAGE,
             object : GdMusicApi.SearchCallback {
 
-                override fun onSuccess(tracks: List<Track>) {
-                    // 专辑接口使用 source_album，播放时恢复成基础音乐源。
+                override fun onSuccess(
+                    tracks: List<Track>
+                ) {
                     tracks.forEach { track ->
                         track.source = source
                     }
@@ -134,7 +335,9 @@ class ComposeMainActivity : ComponentActivity() {
                     }
                 }
 
-                override fun onError(e: Exception) {
+                override fun onError(
+                    e: Exception
+                ) {
                     runOnUiThread {
                         callback(
                             Result.failure(e)
@@ -148,8 +351,17 @@ class ComposeMainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
+        if (::musicController.isInitialized) {
+            musicController.setListener(null)
+        }
+
         if (::playerManager.isInitialized) {
             playerManager.release()
         }
+    }
+
+    private companion object {
+        const val SEARCH_RESULT_COUNT = 30
+        const val FIRST_PAGE = 1
     }
 }

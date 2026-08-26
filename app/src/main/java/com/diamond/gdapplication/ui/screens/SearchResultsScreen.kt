@@ -21,6 +21,18 @@ import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.model.SearchCategory
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.QueuePlayNext
+
 @Composable
 fun SearchResultsScreen(
     keyword: String,
@@ -28,7 +40,10 @@ fun SearchResultsScreen(
     source: String,
     tracks: List<Track>,
     onBack: () -> Unit,
-    onTrackClick: (Int) -> Unit
+    onTrackClick: (Int) -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
+    onFavorite: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -121,10 +136,79 @@ fun SearchResultsScreen(
                             }
                         }
 
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "播放 ${track.name}"
-                        )
+                        Box {
+                            var menuExpanded by remember {
+                                mutableStateOf(false)
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    menuExpanded = true
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "更多"
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = {
+                                    menuExpanded = false
+                                }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("添加到下一首播放")
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.QueuePlayNext,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onPlayNext(track)
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("加入播放列表")
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PlaylistAdd,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onAddToPlaylist(track)
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("收藏到本地歌单")
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.FavoriteBorder,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onFavorite(track)
+                                    }
+                                )
+
+
+                            }
+                        }
                     }
                 }
             }

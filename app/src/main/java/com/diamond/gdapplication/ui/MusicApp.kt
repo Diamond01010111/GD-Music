@@ -22,10 +22,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.diamond.gdapplication.MusicController
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.model.AppPage
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.components.MiniPlayer
+import com.diamond.gdapplication.ui.components.QueueBottomSheet
 import com.diamond.gdapplication.ui.screens.FavoriteScreen
 import com.diamond.gdapplication.ui.screens.HomeScreen
 import com.diamond.gdapplication.ui.screens.NeteasePlaylistScreen
@@ -34,16 +36,35 @@ import com.diamond.gdapplication.ui.screens.SearchScreen
 
 @Composable
 fun MusicApp(
-    playerStatus: String,
+    nowPlayingTrack: Track?,
+    artworkUrl: String,
+    isPlaying: Boolean,
+    playMode: MusicController.PlayMode,
+    queue: List<Track>,
+    currentIndex: Int,
+    playbackProgress: Float,
+
     onRequestSearch: (
         keyword: String,
         category: SearchCategory,
         source: String,
         callback: (Result<List<Track>>) -> Unit
     ) -> Unit,
-    onPlayResults: (List<Track>, Int) -> Unit,
+
+    onPlayResults: (
+        tracks: List<Track>,
+        index: Int
+    ) -> Unit,
+
     onRecommendedSongClick: (String) -> Unit,
-    onPlayPause: () -> Unit
+    onPlayPause: () -> Unit,
+    onSwitchPlayMode: () -> Unit,
+    onQueueTrackClick: (Int) -> Unit,
+    onRemoveQueueTrack: (Int) -> Unit,
+    onClearQueue: () -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
+    onFavorite: (Track) -> Unit,
+    onPlayNext: (Track) -> Unit
 ) {
     var currentPage by remember {
         mutableStateOf(AppPage.HOME)
@@ -73,9 +94,14 @@ fun MusicApp(
         mutableStateOf<String?>(null)
     }
 
-    val showNavigationBar = currentPage == AppPage.HOME ||
-            currentPage == AppPage.FAVORITE ||
-            currentPage == AppPage.NETEASE_PLAYLIST
+    var showQueue by remember {
+        mutableStateOf(false)
+    }
+
+    val showNavigationBar =
+        currentPage == AppPage.HOME ||
+                currentPage == AppPage.FAVORITE ||
+                currentPage == AppPage.NETEASE_PLAYLIST
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -84,55 +110,82 @@ fun MusicApp(
         bottomBar = {
             Column {
                 MiniPlayer(
-                    status = playerStatus,
-                    onPlayPause = onPlayPause
+                    track = nowPlayingTrack,
+                    artworkUrl = artworkUrl,
+                    isPlaying = isPlaying,
+                    playMode = playMode,
+                    playbackProgress = playbackProgress,
+                    onPlayPause = onPlayPause,
+                    onSwitchPlayMode = onSwitchPlayMode,
+                    onOpenQueue = {
+                        showQueue = true
+                    }
                 )
 
                 if (showNavigationBar) {
                     NavigationBar {
                         NavigationBarItem(
-                            selected = currentPage == AppPage.HOME,
+                            selected =
+                                currentPage == AppPage.HOME,
+
                             onClick = {
                                 currentPage = AppPage.HOME
                             },
+
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Default.Home,
+                                    imageVector =
+                                        Icons.Default.Home,
                                     contentDescription = "主页"
                                 )
                             },
+
                             label = {
                                 Text("主页")
                             }
                         )
 
                         NavigationBarItem(
-                            selected = currentPage == AppPage.FAVORITE,
+                            selected =
+                                currentPage == AppPage.FAVORITE,
+
                             onClick = {
-                                currentPage = AppPage.FAVORITE
+                                currentPage =
+                                    AppPage.FAVORITE
                             },
+
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Default.Favorite,
+                                    imageVector =
+                                        Icons.Default.Favorite,
                                     contentDescription = "收藏"
                                 )
                             },
+
                             label = {
                                 Text("收藏")
                             }
                         )
 
                         NavigationBarItem(
-                            selected = currentPage == AppPage.NETEASE_PLAYLIST,
+                            selected =
+                                currentPage ==
+                                        AppPage.NETEASE_PLAYLIST,
+
                             onClick = {
-                                currentPage = AppPage.NETEASE_PLAYLIST
+                                currentPage =
+                                    AppPage.NETEASE_PLAYLIST
                             },
+
                             icon = {
                                 Icon(
-                                    imageVector = Icons.Default.LibraryMusic,
-                                    contentDescription = "网易歌单"
+                                    imageVector =
+                                        Icons.Default.LibraryMusic,
+                                    contentDescription =
+                                        "网易歌单"
                                 )
                             },
+
                             label = {
                                 Text("网易歌单")
                             }
@@ -149,70 +202,118 @@ fun MusicApp(
                 .consumeWindowInsets(innerPadding)
         ) {
             when (currentPage) {
-                AppPage.HOME -> HomeScreen(
-                    onOpenSearch = {
-                        searchError = null
-                        currentPage = AppPage.SEARCH
-                    },
-                    onSongClick = onRecommendedSongClick
-                )
+                AppPage.HOME -> {
+                    HomeScreen(
+                        onOpenSearch = {
+                            searchError = null
+                            currentPage = AppPage.SEARCH
+                        },
 
-                AppPage.FAVORITE -> FavoriteScreen()
+                        onSongClick =
+                            onRecommendedSongClick
+                    )
+                }
 
-                AppPage.NETEASE_PLAYLIST -> NeteasePlaylistScreen()
+                AppPage.FAVORITE -> {
+                    FavoriteScreen()
+                }
 
-                AppPage.SEARCH -> SearchScreen(
-                    isSearching = isSearching,
-                    errorMessage = searchError,
+                AppPage.NETEASE_PLAYLIST -> {
+                    NeteasePlaylistScreen()
+                }
 
-                    onBack = {
-                        currentPage = AppPage.HOME
-                    },
+                AppPage.SEARCH -> {
+                    SearchScreen(
+                        isSearching = isSearching,
+                        errorMessage = searchError,
 
-                    onSearch = { keyword, category, source ->
-                        isSearching = true
-                        searchError = null
+                        onBack = {
+                            searchError = null
+                            currentPage = AppPage.HOME
+                        },
 
-                        onRequestSearch(
-                            keyword,
-                            category,
-                            source
-                        ) { result ->
-                            isSearching = false
+                        onSearch = {
+                                keyword,
+                                category,
+                                source ->
 
-                            result.onSuccess { tracks ->
-                                resultKeyword = keyword
-                                resultCategory = category
-                                resultSource = source
-                                resultTracks = tracks
-                                currentPage = AppPage.SEARCH_RESULTS
-                            }
+                            isSearching = true
+                            searchError = null
 
-                            result.onFailure { error ->
-                                searchError = error.message ?: "搜索失败"
+                            onRequestSearch(
+                                keyword,
+                                category,
+                                source
+                            ) { result ->
+                                isSearching = false
+
+                                result.onSuccess { tracks ->
+                                    resultKeyword = keyword
+                                    resultCategory = category
+                                    resultSource = source
+                                    resultTracks = tracks
+
+                                    currentPage =
+                                        AppPage.SEARCH_RESULTS
+                                }
+
+                                result.onFailure { error ->
+                                    searchError =
+                                        error.message
+                                            ?: "搜索失败"
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
 
-                AppPage.SEARCH_RESULTS -> SearchResultsScreen(
-                    keyword = resultKeyword,
-                    category = resultCategory,
-                    source = resultSource,
-                    tracks = resultTracks,
+                AppPage.SEARCH_RESULTS -> {
+                    SearchResultsScreen(
+                        keyword = resultKeyword,
+                        category = resultCategory,
+                        source = resultSource,
+                        tracks = resultTracks,
 
-                    onBack = {
-                        currentPage = AppPage.SEARCH
-                    },
+                        onBack = {
+                            currentPage = AppPage.SEARCH
+                        },
 
-                    onTrackClick = { index ->
-                        onPlayResults(
-                            resultTracks,
-                            index
-                        )
-                    }
-                )
+                        onTrackClick = { index ->
+                            onPlayResults(
+                                resultTracks,
+                                index
+                            )
+                        },
+
+                        onPlayNext = onPlayNext,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onFavorite = onFavorite
+                    )
+                }
             }
         }
+    }
+
+    if (showQueue) {
+        QueueBottomSheet(
+            tracks = queue,
+            currentIndex = currentIndex,
+
+            onDismiss = {
+                showQueue = false
+            },
+
+            onTrackClick = { index ->
+                onQueueTrackClick(index)
+            },
+
+            onRemoveTrack = { index ->
+                onRemoveQueueTrack(index)
+            },
+
+            onClearQueue = {
+                onClearQueue()
+            }
+        )
     }
 }

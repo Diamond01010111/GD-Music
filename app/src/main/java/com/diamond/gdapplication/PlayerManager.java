@@ -77,6 +77,11 @@ public class PlayerManager {
         }
     }
 
+    public void stopAndClear() {
+        player.stop();
+        player.clearMediaItems();
+    }
+
     public boolean isPlaying() {
         return player.isPlaying();
     }
