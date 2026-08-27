@@ -1,89 +1,365 @@
 package com.diamond.gdapplication.ui.screens
 
+import android.content.Context
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.diamond.gdapplication.data.NeteasePlaylist
+import com.diamond.gdapplication.data.NeteasePlaylistRepository
 
 @Composable
 fun NeteasePlaylistScreen() {
-    var playlistUrl by rememberSaveable {
-        mutableStateOf("")
+    val context = LocalContext.current
+    val preferences = remember {
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    }
+    val repository = remember { NeteasePlaylistRepository() }
+
+    var savedUserId by rememberSaveable {
+        mutableStateOf(preferences.getString(USER_ID_KEY, "").orEmpty())
+    }
+    var inputUserId by rememberSaveable { mutableStateOf(savedUserId) }
+    var playlists by remember { mutableStateOf<List<NeteasePlaylist>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var requestVersion by remember { mutableIntStateOf(0) }
+
+    fun refresh() {
+        if (savedUserId.isBlank()) return
+
+        val version = ++requestVersion
+        isLoading = true
+        errorMessage = null
+
+        repository.loadPublicPlaylists(savedUserId) { result ->
+            if (version != requestVersion) return@loadPublicPlaylists
+
+            isLoading = false
+            result.onSuccess { loaded ->
+                playlists = loaded
+            }.onFailure { error ->
+                errorMessage = error.message ?: "刷新网易歌单失败"
+            }
+        }
     }
 
-    var message by rememberSaveable {
-        mutableStateOf("")
+    LaunchedEffect(savedUserId) {
+        if (savedUserId.isNotBlank()) {
+            refresh()
+        }
     }
 
+    if (savedUserId.isBlank()) {
+        UserIdInput(
+            userId = inputUserId,
+            onUserIdChange = {
+                inputUserId = it.filter(Char::isDigit)
+                errorMessage = null
+            },
+            errorMessage = errorMessage,
+            onConfirm = {
+                val normalizedId = inputUserId.trim()
+                if (normalizedId.isBlank()) {
+                    errorMessage = "请输入网易云用户 ID"
+                } else {
+                    preferences.edit().putString(USER_ID_KEY, normalizedId).apply()
+                    savedUserId = normalizedId
+                }
+            }
+        )
+        return
+    }
+
+    val createdPlaylists = playlists.filter { it.isCreatedBy(savedUserId) }
+    val subscribedPlaylists = playlists.filterNot { it.isCreatedBy(savedUserId) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = "网易歌单",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+        )
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                bottom = 24.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (isLoading && playlists.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
+
+            errorMessage?.let { message ->
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = message,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                }
+            }
+
+            if (!isLoading && errorMessage == null && playlists.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        text = "没有找到公开可见的歌单",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 32.dp)
+                    )
+                }
+            }
+
+            if (createdPlaylists.isNotEmpty()) {
+                sectionTitle("创建的歌单")
+                items(createdPlaylists, key = { "created-${it.id}" }) { playlist ->
+                    PlaylistCard(playlist)
+                }
+            }
+
+            if (subscribedPlaylists.isNotEmpty()) {
+                sectionTitle("收藏的歌单")
+                items(subscribedPlaylists, key = { "subscribed-${it.id}" }) { playlist ->
+                    PlaylistCard(playlist)
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                PlaylistFooter(
+                    userId = savedUserId,
+                    isLoading = isLoading,
+                    onRefresh = ::refresh,
+                    onExit = {
+                        requestVersion++
+                        preferences.edit().remove(USER_ID_KEY).apply()
+                        savedUserId = ""
+                        inputUserId = ""
+                        playlists = emptyList()
+                        isLoading = false
+                        errorMessage = null
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserIdInput(
+    userId: String,
+    onUserIdChange: (String) -> Unit,
+    errorMessage: String?,
+    onConfirm: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "网易歌单",
             style = MaterialTheme.typography.headlineSmall
         )
-
         Text(
-            text = "粘贴网易云音乐歌单分享链接。",
+            text = "输入网易云用户 ID，加载该用户公开创建和收藏的歌单。",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp)
         )
-
         OutlinedTextField(
-            value = playlistUrl,
-            onValueChange = {
-                playlistUrl = it
-                message = ""
+            value = userId,
+            onValueChange = onUserIdChange,
+            label = { Text("网易云用户 ID") },
+            placeholder = { Text("例如：32953014") },
+            isError = errorMessage != null,
+            supportingText = errorMessage?.let { message ->
+                { Text(message) }
             },
-            label = {
-                Text("网易云歌单链接")
-            },
-            placeholder = {
-                Text("https://music.163.com/...")
-            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 20.dp)
         )
-
         Button(
-            enabled = playlistUrl.isNotBlank(),
-            onClick = {
-                message = "网易歌单解析功能尚未接入"
-            },
+            enabled = userId.isNotBlank(),
+            onClick = onConfirm,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp)
         ) {
-            Text("导入歌单")
+            Text("保存并加载")
         }
-
-        if (message.isNotEmpty()) {
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        }
-
         Text(
-            text = "GD 音乐台 API 暂不支持网易云歌单链接解析。",
+            text = "用户 ID 会保存在本机；重新打开此页面时会自动刷新。私密歌单不会显示。",
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 20.dp)
+            modifier = Modifier.padding(top = 16.dp)
         )
     }
 }
+
+private fun LazyGridScope.sectionTitle(title: String) {
+    item(span = { GridItemSpan(maxLineSpan) }) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun PlaylistCard(playlist: NeteasePlaylist) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            if (playlist.coverUrl.isNotBlank()) {
+                AsyncImage(
+                    model = playlist.coverUrl,
+                    contentDescription = playlist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 12.dp,
+                                topEnd = 12.dp
+                            )
+                        )
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LibraryMusic,
+                        contentDescription = "默认歌单封面"
+                    )
+                }
+            }
+
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp)
+            )
+            Text(
+                text = "${playlist.trackCount} 首",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    start = 10.dp,
+                    top = 3.dp,
+                    end = 10.dp,
+                    bottom = 10.dp
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistFooter(
+    userId: String,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onExit: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+    ) {
+        HorizontalDivider()
+        Text(
+            text = "网易云用户 ID：$userId",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 16.dp)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                enabled = !isLoading,
+                onClick = onRefresh,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(if (isLoading) "刷新中" else "刷新")
+            }
+            OutlinedButton(
+                onClick = onExit,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("退出")
+            }
+        }
+    }
+}
+
+private const val PREFERENCES_NAME = "netease_playlist_preferences"
+private const val USER_ID_KEY = "netease_user_id"
