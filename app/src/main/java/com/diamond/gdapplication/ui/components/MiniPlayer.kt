@@ -1,6 +1,7 @@
 package com.diamond.gdapplication.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,10 +29,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.MusicController
 import com.diamond.gdapplication.Track
+import kotlin.math.abs
 
 @Composable
 fun MiniPlayer(
@@ -45,7 +48,9 @@ fun MiniPlayer(
 
     onPlayPause: () -> Unit,
     onSwitchPlayMode: () -> Unit,
-    onOpenQueue: () -> Unit
+    onOpenQueue: () -> Unit,
+    onSwipePrevious: () -> Unit,
+    onSwipeNext: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -78,6 +83,27 @@ fun MiniPlayer(
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 10.dp)
+                        .pointerInput(track?.id) {
+                            val swipeThreshold = 48.dp.toPx()
+                            var totalDrag = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { totalDrag = 0f },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    totalDrag += dragAmount
+                                },
+                                onDragCancel = { totalDrag = 0f },
+                                onDragEnd = {
+                                    if (track != null && abs(totalDrag) >= swipeThreshold) {
+                                        if (totalDrag < 0f) {
+                                            onSwipeNext()
+                                        } else {
+                                            onSwipePrevious()
+                                        }
+                                    }
+                                    totalDrag = 0f
+                                }
+                            )
+                        }
                 ) {
                     Text(
                         text = track?.name ?: "暂未播放",
