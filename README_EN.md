@@ -1,51 +1,52 @@
 # GD Application
 
-An Android online music player built with Kotlin, Java, and Jetpack Compose. The application uses the **GD Music Platform API** to search for music and retrieve playback URLs, artwork, and lyrics. It is currently being developed as a learning project for Android Compose, Media3, and network programming.
+An Android online music player built with Kotlin, Java, and Jetpack Compose. This project is intended for learning Android development, Media3 audio playback, Jetpack Compose UI development, and network programming.
 
-> This project is still under development and is intended only for personal study and technical discussion. Do not use it commercially or download, redistribute, or otherwise misuse copyrighted music.
+> This project is intended for study and technical discussion only. Follow applicable laws, third-party terms of service, and copyright requirements. Do not use it to download, redistribute, or commercially exploit unauthorized music content.
 
 [简体中文](README.md) | English
 
-## Current Status
+## Features
 
-The original Java View interface is being migrated to Jetpack Compose while the existing Java networking and playback components are retained.
+### Music Search and Playback
 
-Features completed or currently being integrated:
+- Search by song, artist, or album
+- Switch between multiple music sources
+- Save recent search history
+- Retrieve playback URLs and album artwork online
+- Play audio with AndroidX Media3 / ExoPlayer
+- Play, pause, and display playback progress
+- List repeat, repeat-one, and shuffle modes
+- Play next, switch queue tracks, remove individual tracks, and clear the queue
 
-- Edge-to-edge UI built with Jetpack Compose and Material 3
-- Navigation between Home, Favorites, NetEase Playlists, and Search
-- Song/artist search and album search
-- Music source selection
-- Recent search history
-- Search result list with per-track actions
-- Online retrieval of playback URLs and album artwork
-- Audio playback with Media3 ExoPlayer
-- Mini player
-    - Album artwork, song title, and artist
-    - Play and pause controls
-    - Playback progress indicator
-    - List repeat, repeat-one, and shuffle modes
-    - Access to the current playback queue
-- Playback queue
-    - Fixed-height bottom sheet
-    - Highlight for the currently playing track
-    - Tap a track to start playback
-    - Add a track to play next
-    - Remove individual tracks
-    - Clear the entire queue
-- Local favorites support (still being improved)
+### Local Favorites
 
-Planned improvements:
+- Create multiple local favorite playlists
+- Add songs from search and browsing screens to a selected favorite
+- Browse favorite details and play all tracks
+- Remove tracks from a favorite
+- Delete favorite playlists
+- Use the first track's artwork as the playlist cover
+- Persist local data with SharedPreferences
 
-- NetEase playlist search and playlist details
-- Complete favorites and local playlist management
-- Synchronized lyrics display
-- Better playback errors, network error handling, and retry support
-- Background playback, notification controls, and audio focus handling
-- Seekable playback progress bar
-- UI state persistence and process restoration
-- UI polish, animations, and dark theme improvements
-- Unit and UI tests
+### NetEase Cloud Music Playlists
+
+- Enter a NetEase Cloud Music user ID
+- Load the user's publicly visible created and subscribed playlists
+- Display created and subscribed playlists in separate sections
+- Show playlists in a two-column artwork grid
+- Remember the user ID on the device
+- Refresh automatically when the page opens
+- Refresh manually or sign out of the current user
+
+The application currently displays public playlist metadata only. Viewing playlist tracks and playing NetEase playlists are not yet supported.
+
+### Android Auto
+
+- Provides Favorites and NetEase Playlists as the two top-level car destinations
+- Browses local favorite playlists and their tracks
+- Plays favorite tracks from Android Auto
+- Shows an import-on-phone notice under NetEase Playlists
 
 ## Tech Stack
 
@@ -55,145 +56,75 @@ Planned improvements:
 - Material 3
 - AndroidX Media3 / ExoPlayer
 - OkHttp
-- Gson
 - Coil 3
-- SharedPreferences for search history and local favorites
-
-## Project Structure
-
-The recommended structure at the current stage is shown below. It may continue to change during the Compose migration.
-
-```text
-app/src/main/java/com/diamond/gdapplication/
-├── ComposeMainActivity.kt          # Compose entry point and player state bridge
-├── GdMusicApi.java                 # GD Music Platform API client
-├── MusicController.java            # Playback queue and mode controller
-├── PlayerManager.java              # Media3 ExoPlayer wrapper
-├── Track.java                      # Track data model
-├── LocalPlaylistStore.java         # Local favorites storage
-├── data/
-│   └── SearchHistoryStore.kt       # Search history storage
-├── model/
-│   └── SearchModels.kt             # Page, search category, and source models
-└── ui/
-    ├── MusicApp.kt                 # Navigation and the main Scaffold
-    ├── components/
-    │   ├── MiniPlayer.kt
-    │   └── QueueBottomSheet.kt
-    └── screens/
-        ├── HomeScreen.kt
-        ├── SearchScreen.kt
-        ├── SearchResultsScreen.kt
-        ├── FavoriteScreen.kt
-        └── NeteasePlaylistScreen.kt
-```
+- SharedPreferences
 
 ## Requirements
 
-- Android Studio, preferably the current stable release
+- Android Studio
 - JDK 17
 - Android SDK
-- An Android Gradle Plugin version that supports Jetpack Compose
-- A network connection that can access the GD Music Platform API
+- Minimum Android version: Android 6.0 (API 23)
+- Target Android version: API 36
+- Network access to the required third-party music services
 
 ## Running the Project
 
-1. Clone the repository and open it in Android Studio:
+1. Clone the repository:
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Diamond01010111/GD_Application.git
    cd GD_Application
    ```
 
-2. Wait for Gradle Sync to finish.
+2. Open the project in Android Studio.
+3. Wait for Gradle Sync to finish.
+4. Connect an Android device or start an emulator.
+5. Click **Run** to build and install the application.
 
-3. Ensure that `AndroidManifest.xml` contains the Internet permission:
+To test Android Auto, use the Desktop Head Unit supplied with Android Studio or connect a compatible Android Auto device and vehicle.
 
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET" />
-   ```
+## Third-Party Services
 
-4. Select an Android emulator or physical device.
+The project uses the GD Music Platform API to search for music and retrieve playback URLs, artwork, and lyric data:
 
-5. Click **Run** in Android Studio.
-
-If the app icon does not appear after installation, make sure the app has been run successfully and that the launcher activity contains the `MAIN` and `LAUNCHER` intent filter.
-
-## GD Music Platform API
-
-This project uses the following third-party service:
-
-- API endpoint: `https://music-api.gdstudio.xyz/api.php`
-- Attribution: **GD Music Platform (music.gdstudio.xyz)**
+- API: `https://music-api.gdstudio.xyz/api.php`
+- Attribution: GD Music Platform (music.gdstudio.xyz)
 - Documented rate limit: no more than 50 requests within five minutes
 - Documented stable sources: `netease`, `joox`, and `bilibili`
 
-Music sources listed by the application:
+The NetEase playlist screen uses a public NetEase Cloud Music endpoint to retrieve publicly visible playlists for a specified user. The endpoint, response format, and availability may change without notice. Private playlists are not displayed.
 
-| Music source | Parameter | Recommendation |
-| --- | --- | --- |
-| NetEase Cloud Music | `netease` | Recommended |
-| JOOX | `joox` | Recommended |
-| Bilibili | `bilibili` | Recommended |
-| Tencent Music | `tencent` | Unstable source |
-| Kuwo | `kuwo` | Unstable source |
-| Tidal | `tidal` | Unstable source |
-| Qobuz | `qobuz` | Unstable source |
-| Apple Music | `apple` | Unstable source |
-| YouTube Music | `ytmusic` | Unstable source |
-| Spotify | `spotify` | Unstable source |
+You are responsible for reviewing and following each third-party service's terms, licenses, and rate limits.
 
-Main API requests:
+## Planned Improvements
 
-```text
-# Search
-GET /api.php?types=search&source={source}&name={keyword}&count={count}&pages={page}
+- NetEase playlist details and track import
+- Lyrics display and synchronized scrolling
+- Seekable playback progress
+- More complete background playback and notification controls
+- Network error messages, retries, and caching
+- Playback and screen state restoration
+- Dark theme, animations, and UI polish
+- Unit and UI tests
 
-# Retrieve a playback URL
-GET /api.php?types=url&source={source}&id={trackId}&br={quality}
+## Known Limitations
 
-# Retrieve album artwork
-GET /api.php?types=pic&source={source}&id={picId}&size={size}
-
-# Retrieve lyrics
-GET /api.php?types=lyric&source={source}&id={lyricId}
-```
-
-Album searches currently append `_album` to the source parameter—for example, `netease_album`.
-
-### API Usage Notes
-
-- Attribute the service as “GD Music Platform (music.gdstudio.xyz)” when using its API.
-- Avoid concurrent or high-frequency requests. Client-side throttling and caching are recommended.
-- Some sources may be temporarily unavailable, and the returned audio quality may be lower than requested.
-- Playback URLs may expire and should not be stored permanently.
-- The currently available API documentation does not provide a complete NetEase playlist search endpoint, so playlist support is still pending.
-
-## Known Issues
-
-- The project is still migrating from Java Views to Compose, so some legacy screens or entry points may remain.
-- Sources that are not marked as recommended may be unavailable.
-- Favorites are currently stored locally and may be lost when application data is cleared.
-- The queue, current track, and playback position are not yet fully restored after the application process is terminated.
-- Online content and service availability depend on third-party providers.
-
-## Development Guidelines
-
-- Keep Compose UI code in the `ui` package; do not place networking or playback logic directly inside composables.
-- `MusicController` manages the playback queue, current index, and playback mode.
-- `PlayerManager` handles interactions with the Media3 Player only.
-- Player state is sent to `ComposeMainActivity` through listener callbacks and then passed to `MusicApp` as state.
-- Call `notifyQueueChanged()` after modifying the queue and `onPlayModeChanged()` after changing the playback mode.
-- Respect the API rate limit and provide clear user-facing messages when requests fail.
+- Third-party music sources may become temporarily unavailable
+- Returned audio quality may be lower than requested
+- Playback URLs may expire
+- Clearing application data removes local favorites and the saved NetEase user ID
+- The queue, current track, and playback position are not fully restored after process termination
+- NetEase playlist browsing and playback are not yet implemented in Android Auto
 
 ## Disclaimer
 
-This is a non-commercial educational project. Music, artwork, lyrics, and other content are provided by third-party online services and remain the property of their respective authors and rights holders. This project does not host or distribute music files and makes no guarantee regarding the availability, legality, or content of third-party services.
+This project does not host, provide, or distribute music files. Music, artwork, lyrics, playlist information, and other third-party content belong to their respective authors, platforms, or rights holders.
 
-If any content infringes your legal rights, please contact the relevant service provider or the project maintainer.
+The project author makes no guarantee regarding the availability, accuracy, stability, or legality of third-party services or content. Users are responsible for their use of those services.
 
-The GD Music Platform API is provided by GD Studio. Its documentation states that it is licensed under **CC BY-NC 4.0** and is intended for study purposes only.
+The GD Music Platform API is provided by GD Studio. Its documentation states that it is licensed under **CC BY-NC 4.0** and intended for study purposes only. That license applies to the relevant third-party service and does not mean that this project's author owns or can relicense its music or other content.
 
 ## License
 
-A license for this project has not yet been selected. Until a `LICENSE` file is added, do not use this project commercially or redistribute it without permission.
+Code written for this project is available under the [MIT License](https://opensource.org/license/mit). The MIT License does not cover third-party APIs, dependencies, music, artwork, lyrics, trademarks, or other third-party content; each remains subject to its own terms and license.
