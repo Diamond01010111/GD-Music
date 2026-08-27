@@ -5,6 +5,7 @@ import android.os.Looper
 import com.diamond.gdapplication.Track
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -51,40 +52,156 @@ class NeteasePlaylistRepository {
             .addQueryParameter("s", "0")
             .build()
 
-        loadTracksFromUrl(modernUrl.toString()) { modernResult ->
-            modernResult.onSuccess { tracks ->
-                callback(Result.success(tracks))
+        loadPlaylistSnapshot(modernUrl.toString()) { modernResult ->
+            modernResult.onSuccess { snapshot ->
+                loadAllTrackDetails(snapshot, callback)
             }.onFailure {
                 val legacyUrl = LEGACY_PLAYLIST_DETAIL_URL.toHttpUrl().newBuilder()
                     .addQueryParameter("id", playlistId)
                     .build()
-                loadTracksFromUrl(legacyUrl.toString(), callback)
+                loadPlaylistSnapshot(legacyUrl.toString()) { legacyResult ->
+                    legacyResult.onSuccess { snapshot ->
+                        loadAllTrackDetails(snapshot, callback)
+                    }.onFailure { error ->
+                        callback(Result.failure(error))
+                    }
+                }
             }
         }
     }
 
-    private fun loadTracksFromUrl(
+    private fun loadPlaylistSnapshot(
         url: String,
-        callback: (Result<List<Track>>) -> Unit
+        callback: (Result<PlaylistSnapshot>) -> Unit
     ) {
         execute(url) { root ->
             val playlist = root.optJSONObject("playlist")
                 ?: root.optJSONObject("result")
                 ?: throw IOException("网易云没有返回歌单详情")
-            val array = playlist.optJSONArray("tracks")
-                ?: throw IOException("网易云没有返回歌曲数据")
-            if (array.length() == 0 && playlist.optInt("trackCount", 0) > 0) {
-                throw IOException("网易云返回的歌曲数据不完整")
-            }
             val tracks = buildList {
-                for (index in 0 until array.length()) {
-                    val item = array.optJSONObject(index) ?: continue
-                    parseTrack(item)?.let(::add)
+                val array = playlist.optJSONArray("tracks")
+                if (array != null) {
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        parseTrack(item)?.let(::add)
+                    }
                 }
             }
-            tracks
+            val trackIds = buildList {
+                val array = playlist.optJSONArray("trackIds")
+                if (array != null) {
+                    for (index in 0 until array.length()) {
+                        val id = array.optJSONObject(index)
+                            ?.opt("id")
+                            ?.toString()
+                            .orEmpty()
+                        if (id.isNotBlank() && id != "null") add(id)
+                    }
+                }
+            }.ifEmpty { tracks.map { track -> track.id } }
+
+            PlaylistSnapshot(trackIds = trackIds, tracks = tracks)
         }.onResult(callback)
     }
+
+    private fun loadAllTrackDetails(
+        snapshot: PlaylistSnapshot,
+        callback: (Result<List<Track>>) -> Unit
+    ) {
+        if (snapshot.trackIds.isEmpty()) {
+            callback(Result.success(snapshot.tracks))
+            return
+        }
+
+        val tracksById = snapshot.tracks.associateByTo(linkedMapOf()) { it.id }
+        val missingIds = snapshot.trackIds.filterNot(tracksById::containsKey)
+        if (missingIds.isEmpty()) {
+            callback(Result.success(orderedTracks(snapshot.trackIds, tracksById)))
+            return
+        }
+
+        loadSongDetailBatches(
+            ids = missingIds,
+            offset = 0,
+            tracksById = tracksById
+        ) { result ->
+            result.onSuccess {
+                callback(Result.success(orderedTracks(snapshot.trackIds, tracksById)))
+            }.onFailure { error ->
+                callback(Result.failure(error))
+            }
+        }
+    }
+
+    private fun loadSongDetailBatches(
+        ids: List<String>,
+        offset: Int,
+        tracksById: MutableMap<String, Track>,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        if (offset >= ids.size) {
+            callback(Result.success(Unit))
+            return
+        }
+
+        val batch = ids.drop(offset).take(SONG_DETAIL_BATCH_SIZE)
+        loadSongDetailBatch(batch) { result ->
+            result.onSuccess { tracks ->
+                tracks.forEach { track -> tracksById[track.id] = track }
+                loadSongDetailBatches(
+                    ids,
+                    offset + batch.size,
+                    tracksById,
+                    callback
+                )
+            }.onFailure { error ->
+                callback(Result.failure(error))
+            }
+        }
+    }
+
+    private fun loadSongDetailBatch(
+        ids: List<String>,
+        callback: (Result<List<Track>>) -> Unit
+    ) {
+        val legacyUrl = SONG_DETAIL_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("ids", ids.joinToString(prefix = "[", postfix = "]"))
+            .build()
+
+        execute(legacyUrl.toString(), ::parseSongs).onResult { legacyResult ->
+            legacyResult.onSuccess { callback(Result.success(it)) }
+                .onFailure {
+                    val body = FormBody.Builder()
+                        .add(
+                            "c",
+                            ids.joinToString(prefix = "[", postfix = "]") { id ->
+                                "{\"id\":$id}"
+                            }
+                        )
+                        .build()
+                    val request = baseRequestBuilder(SONG_DETAIL_V3_URL)
+                        .post(body)
+                        .build()
+                    executeRequest(request, ::parseSongs).onResult(callback)
+                }
+        }
+    }
+
+    private fun parseSongs(root: JSONObject): List<Track> {
+        val array = root.optJSONArray("songs")
+            ?: throw IOException("网易云没有返回歌曲详情")
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                parseTrack(item)?.let(::add)
+            }
+        }
+    }
+
+    private fun orderedTracks(
+        ids: List<String>,
+        tracksById: Map<String, Track>
+    ): List<Track> = ids.mapNotNull(tracksById::get)
 
     private fun loadPage(
         userId: String,
@@ -172,15 +289,14 @@ class NeteasePlaylistRepository {
         url: String,
         transform: (JSONObject) -> T
     ): PendingResult<T> {
-        return PendingResult { callback ->
-            val request = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .header("Referer", "https://music.163.com/")
-                .header("User-Agent", USER_AGENT)
-                .get()
-                .build()
+        return executeRequest(baseRequestBuilder(url).get().build(), transform)
+    }
 
+    private fun <T> executeRequest(
+        request: Request,
+        transform: (JSONObject) -> T
+    ): PendingResult<T> {
+        return PendingResult { callback ->
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     deliverResult(callback, Result.failure(e))
@@ -208,6 +324,14 @@ class NeteasePlaylistRepository {
                 }
             })
         }
+    }
+
+    private fun baseRequestBuilder(url: String): Request.Builder {
+        return Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .header("Referer", "https://music.163.com/")
+            .header("User-Agent", USER_AGENT)
     }
 
     private fun parseTrack(item: JSONObject): Track? {
@@ -269,12 +393,20 @@ class NeteasePlaylistRepository {
         }
     }
 
+    private data class PlaylistSnapshot(
+        val trackIds: List<String>,
+        val tracks: List<Track>
+    )
+
     private companion object {
         const val USER_PLAYLIST_URL = "https://music.163.com/api/user/playlist/"
         const val PLAYLIST_DETAIL_URL = "https://music.163.com/api/v6/playlist/detail"
         const val LEGACY_PLAYLIST_DETAIL_URL = "https://music.163.com/api/playlist/detail"
+        const val SONG_DETAIL_URL = "https://music.163.com/api/song/detail/"
+        const val SONG_DETAIL_V3_URL = "https://music.163.com/api/v3/song/detail"
         const val PAGE_SIZE = 100
         const val MAX_PLAYLIST_TRACKS = 100000
+        const val SONG_DETAIL_BATCH_SIZE = 200
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
