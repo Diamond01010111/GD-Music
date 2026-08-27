@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
@@ -18,12 +22,16 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,11 +53,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.data.NeteasePlaylist
 import com.diamond.gdapplication.data.NeteasePlaylistRepository
+import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
 
 @Composable
-fun NeteasePlaylistScreen() {
+fun NeteasePlaylistScreen(
+    onPlayPlaylist: (List<Track>, Int) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
+    onFavorite: (Track) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit
+) {
     val context = LocalContext.current
     val preferences = remember {
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -64,6 +81,11 @@ fun NeteasePlaylistScreen() {
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var requestVersion by remember { mutableIntStateOf(0) }
+    var selectedPlaylist by remember { mutableStateOf<NeteasePlaylist?>(null) }
+    var selectedTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var isLoadingTracks by remember { mutableStateOf(false) }
+    var trackError by remember { mutableStateOf<String?>(null) }
+    var detailRequestVersion by remember { mutableIntStateOf(0) }
 
     fun refresh() {
         if (savedUserId.isBlank()) return
@@ -84,10 +106,30 @@ fun NeteasePlaylistScreen() {
         }
     }
 
-    LaunchedEffect(savedUserId) {
-        if (savedUserId.isNotBlank()) {
-            refresh()
+    fun loadTracks(playlist: NeteasePlaylist) {
+        val version = ++detailRequestVersion
+        isLoadingTracks = true
+        trackError = null
+        selectedTracks = emptyList()
+
+        repository.loadPlaylistTracks(playlist.id) { result ->
+            if (version != detailRequestVersion) return@loadPlaylistTracks
+
+            isLoadingTracks = false
+            result.onSuccess { tracks ->
+                selectedTracks = tracks
+            }.onFailure { error ->
+                trackError = error.message ?: "加载歌单歌曲失败"
+            }
         }
+    }
+
+    LaunchedEffect(savedUserId) {
+        if (savedUserId.isNotBlank()) refresh()
+    }
+
+    LaunchedEffect(selectedPlaylist?.id) {
+        selectedPlaylist?.let(::loadTracks)
     }
 
     if (savedUserId.isBlank()) {
@@ -111,6 +153,29 @@ fun NeteasePlaylistScreen() {
         return
     }
 
+    selectedPlaylist?.let { playlist ->
+        PlaylistDetail(
+            playlist = playlist,
+            tracks = selectedTracks,
+            isLoading = isLoadingTracks,
+            errorMessage = trackError,
+            onBack = {
+                detailRequestVersion++
+                selectedPlaylist = null
+                selectedTracks = emptyList()
+                trackError = null
+            },
+            onRetry = { loadTracks(playlist) },
+            onPlayPlaylist = onPlayPlaylist,
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = onSearchArtist,
+            onSearchAlbum = onSearchAlbum
+        )
+        return
+    }
+
     val createdPlaylists = playlists.filter { it.isCreatedBy(savedUserId) }
     val subscribedPlaylists = playlists.filterNot { it.isCreatedBy(savedUserId) }
 
@@ -122,18 +187,18 @@ fun NeteasePlaylistScreen() {
         )
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Adaptive(minSize = PLAYLIST_GRID_CELL_SIZE),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
+                start = 12.dp,
+                end = 12.dp,
                 bottom = 24.dp
             ),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (isLoading && playlists.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                fullWidthItem {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -146,7 +211,7 @@ fun NeteasePlaylistScreen() {
             }
 
             errorMessage?.let { message ->
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                fullWidthItem {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = message,
@@ -158,7 +223,7 @@ fun NeteasePlaylistScreen() {
             }
 
             if (!isLoading && errorMessage == null && playlists.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                fullWidthItem {
                     Text(
                         text = "没有找到公开可见的歌单",
                         style = MaterialTheme.typography.bodyMedium,
@@ -170,18 +235,18 @@ fun NeteasePlaylistScreen() {
             if (createdPlaylists.isNotEmpty()) {
                 sectionTitle("创建的歌单")
                 items(createdPlaylists, key = { "created-${it.id}" }) { playlist ->
-                    PlaylistCard(playlist)
+                    PlaylistCard(playlist, onClick = { selectedPlaylist = playlist })
                 }
             }
 
             if (subscribedPlaylists.isNotEmpty()) {
                 sectionTitle("收藏的歌单")
                 items(subscribedPlaylists, key = { "subscribed-${it.id}" }) { playlist ->
-                    PlaylistCard(playlist)
+                    PlaylistCard(playlist, onClick = { selectedPlaylist = playlist })
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            fullWidthItem {
                 PlaylistFooter(
                     userId = savedUserId,
                     isLoading = isLoading,
@@ -202,6 +267,172 @@ fun NeteasePlaylistScreen() {
 }
 
 @Composable
+private fun PlaylistDetail(
+    playlist: NeteasePlaylist,
+    tracks: List<Track>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onPlayPlaylist: (List<Track>, Int) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
+    onFavorite: (Track) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit
+) {
+    var moreTrack by remember { mutableStateOf<Track?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回网易歌单")
+            }
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PlaylistCover(
+                        playlist = playlist,
+                        modifier = Modifier.size(96.dp)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 14.dp)
+                    ) {
+                        Text(
+                            text = playlist.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${tracks.size} 首歌曲",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Button(
+                            enabled = tracks.isNotEmpty() && !isLoading,
+                            onClick = { onPlayPlaylist(tracks, 0) },
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Text("播放全部")
+                        }
+                    }
+                }
+            }
+
+            if (isLoading) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 36.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else if (errorMessage != null) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = errorMessage,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Button(
+                                onClick = onRetry,
+                                modifier = Modifier.padding(top = 10.dp)
+                            ) {
+                                Text("重试")
+                            }
+                        }
+                    }
+                }
+            } else if (tracks.isEmpty()) {
+                item {
+                    Text("歌单中没有可显示的歌曲", Modifier.padding(20.dp))
+                }
+            } else {
+                itemsIndexed(
+                    items = tracks,
+                    key = { index, track -> "${track.id}-$index" }
+                ) { index, track ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onPlayPlaylist(tracks, index) }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = track.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = track.artist.ifBlank { "未知歌手" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { moreTrack = track }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    moreTrack?.let { track ->
+        TrackMoreBottomSheet(
+            track = track,
+            onDismiss = { moreTrack = null },
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = { artist -> onSearchArtist(artist, track.source) },
+            onSearchAlbum = { album -> onSearchAlbum(album, track.source) }
+        )
+    }
+}
+
+@Composable
 private fun UserIdInput(
     userId: String,
     onUserIdChange: (String) -> Unit,
@@ -214,10 +445,7 @@ private fun UserIdInput(
             .padding(20.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "网易歌单",
-            style = MaterialTheme.typography.headlineSmall
-        )
+        Text("网易歌单", style = MaterialTheme.typography.headlineSmall)
         Text(
             text = "输入网易云用户 ID，加载该用户公开创建和收藏的歌单。",
             style = MaterialTheme.typography.bodyMedium,
@@ -229,9 +457,7 @@ private fun UserIdInput(
             label = { Text("网易云用户 ID") },
             placeholder = { Text("例如：32953014") },
             isError = errorMessage != null,
-            supportingText = errorMessage?.let { message ->
-                { Text(message) }
-            },
+            supportingText = errorMessage?.let { message -> { Text(message) } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier
@@ -255,67 +481,73 @@ private fun UserIdInput(
     }
 }
 
+private fun LazyGridScope.fullWidthItem(content: @Composable () -> Unit) {
+    item(span = { GridItemSpan(maxLineSpan) }) { content() }
+}
+
 private fun LazyGridScope.sectionTitle(title: String) {
-    item(span = { GridItemSpan(maxLineSpan) }) {
+    fullWidthItem {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
         )
     }
 }
 
 @Composable
-private fun PlaylistCard(playlist: NeteasePlaylist) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column {
-            if (playlist.coverUrl.isNotBlank()) {
-                AsyncImage(
-                    model = playlist.coverUrl,
-                    contentDescription = playlist.name,
-                    contentScale = ContentScale.Crop,
+private fun PlaylistCard(
+    playlist: NeteasePlaylist,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Card(
+            modifier = Modifier.width(PLAYLIST_CARD_SIZE),
+            onClick = onClick
+        ) {
+            Column {
+                PlaylistCover(
+                    playlist = playlist,
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = 12.dp,
-                                topEnd = 12.dp
-                            )
-                        )
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LibraryMusic,
-                        contentDescription = "默认歌单封面"
-                    )
-                }
+                Text(
+                    text = playlist.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)
+                )
+                Text(
+                    text = "${playlist.trackCount} 首",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 8.dp)
+                )
             }
+        }
+    }
+}
 
-            Text(
-                text = playlist.name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp)
-            )
-            Text(
-                text = "${playlist.trackCount} 首",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(
-                    start = 10.dp,
-                    top = 3.dp,
-                    end = 10.dp,
-                    bottom = 10.dp
-                )
-            )
+@Composable
+private fun PlaylistCover(
+    playlist: NeteasePlaylist,
+    modifier: Modifier = Modifier
+) {
+    if (playlist.coverUrl.isNotBlank()) {
+        AsyncImage(
+            model = playlist.coverUrl,
+            contentDescription = playlist.name,
+            contentScale = ContentScale.Crop,
+            modifier = modifier.clip(RoundedCornerShape(10.dp))
+        )
+    } else {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.LibraryMusic, contentDescription = "默认歌单封面")
         }
     }
 }
@@ -361,5 +593,7 @@ private fun PlaylistFooter(
     }
 }
 
+private val PLAYLIST_GRID_CELL_SIZE = 104.dp
+private val PLAYLIST_CARD_SIZE = 96.dp
 private const val PREFERENCES_NAME = "netease_playlist_preferences"
 private const val USER_ID_KEY = "netease_user_id"

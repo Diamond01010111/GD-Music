@@ -284,7 +284,28 @@ fun MusicApp(
                 }
 
                 AppPage.NETEASE_PLAYLIST -> {
-                    NeteasePlaylistScreen()
+                    NeteasePlaylistScreen(
+                        onPlayPlaylist = onPlayResults,
+                        onPlayNext = onPlayNext,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onFavorite = { track ->
+                            pendingFavoriteTrack = track
+                        },
+                        onSearchArtist = { artist, source ->
+                            executeSearch(
+                                artist,
+                                SearchCategory.SONG,
+                                source
+                            )
+                        },
+                        onSearchAlbum = { album, source ->
+                            executeSearch(
+                                album,
+                                SearchCategory.ALBUM,
+                                source
+                            )
+                        }
+                    )
                 }
 
                 AppPage.SEARCH -> {

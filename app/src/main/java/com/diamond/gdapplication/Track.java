@@ -15,6 +15,10 @@ public class Track {
     public String lyric;
     public String translatedLyric;
 
+    // External playlists provide metadata rather than a GD search result.
+    // These tracks must be resolved and artist-matched before playback.
+    public boolean externalMetadata = false;
+
     public Track(String id, String source, String name, String artist, String album, String picId, String lyricId) {
         this.id = id;
         this.source = source;
