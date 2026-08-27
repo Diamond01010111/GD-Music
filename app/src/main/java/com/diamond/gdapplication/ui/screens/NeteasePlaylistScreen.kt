@@ -1,6 +1,7 @@
 package com.diamond.gdapplication.ui.screens
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,6 +35,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +59,8 @@ import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.data.NeteasePlaylist
 import com.diamond.gdapplication.data.NeteasePlaylistRepository
 import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Composable
 fun NeteasePlaylistScreen(
@@ -77,7 +81,9 @@ fun NeteasePlaylistScreen(
         mutableStateOf(preferences.getString(USER_ID_KEY, "").orEmpty())
     }
     var inputUserId by rememberSaveable { mutableStateOf(savedUserId) }
-    var playlists by remember { mutableStateOf<List<NeteasePlaylist>>(emptyList()) }
+    var playlists by remember {
+        mutableStateOf(readCachedPlaylists(preferences, savedUserId))
+    }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var requestVersion by remember { mutableIntStateOf(0) }
@@ -86,6 +92,7 @@ fun NeteasePlaylistScreen(
     var isLoadingTracks by remember { mutableStateOf(false) }
     var trackError by remember { mutableStateOf<String?>(null) }
     var detailRequestVersion by remember { mutableIntStateOf(0) }
+    var selectedSection by rememberSaveable { mutableIntStateOf(SECTION_CREATED) }
 
     fun refresh() {
         if (savedUserId.isBlank()) return
@@ -93,6 +100,9 @@ fun NeteasePlaylistScreen(
         val version = ++requestVersion
         isLoading = true
         errorMessage = null
+        preferences.edit()
+            .putLong(LAST_REFRESH_ATTEMPT_KEY, System.currentTimeMillis())
+            .apply()
 
         repository.loadPublicPlaylists(savedUserId) { result ->
             if (version != requestVersion) return@loadPublicPlaylists
@@ -100,6 +110,7 @@ fun NeteasePlaylistScreen(
             isLoading = false
             result.onSuccess { loaded ->
                 playlists = loaded
+                saveCachedPlaylists(preferences, savedUserId, loaded)
             }.onFailure { error ->
                 errorMessage = error.message ?: "刷新网易歌单失败"
             }
@@ -125,7 +136,20 @@ fun NeteasePlaylistScreen(
     }
 
     LaunchedEffect(savedUserId) {
-        if (savedUserId.isNotBlank()) refresh()
+        if (savedUserId.isNotBlank()) {
+            val cached = readCachedPlaylists(preferences, savedUserId)
+            if (playlists.isEmpty() && cached.isNotEmpty()) {
+                playlists = cached
+            }
+
+            val lastAttempt = preferences.getLong(LAST_REFRESH_ATTEMPT_KEY, 0L)
+            if (
+                lastAttempt == 0L ||
+                System.currentTimeMillis() - lastAttempt >= REFRESH_INTERVAL_MS
+            ) {
+                refresh()
+            }
+        }
     }
 
     LaunchedEffect(selectedPlaylist?.id) {
@@ -145,6 +169,7 @@ fun NeteasePlaylistScreen(
                 if (normalizedId.isBlank()) {
                     errorMessage = "请输入网易云用户 ID"
                 } else {
+                    clearPlaylistCache(preferences)
                     preferences.edit().putString(USER_ID_KEY, normalizedId).apply()
                     savedUserId = normalizedId
                 }
@@ -178,6 +203,11 @@ fun NeteasePlaylistScreen(
 
     val createdPlaylists = playlists.filter { it.isCreatedBy(savedUserId) }
     val subscribedPlaylists = playlists.filterNot { it.isCreatedBy(savedUserId) }
+    val visiblePlaylists = if (selectedSection == SECTION_CREATED) {
+        createdPlaylists
+    } else {
+        subscribedPlaylists
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -186,16 +216,29 @@ fun NeteasePlaylistScreen(
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
         )
 
+        TabRow(selectedTabIndex = selectedSection) {
+            Tab(
+                selected = selectedSection == SECTION_CREATED,
+                onClick = { selectedSection = SECTION_CREATED },
+                text = { Text("创建 (${createdPlaylists.size})") }
+            )
+            Tab(
+                selected = selectedSection == SECTION_SUBSCRIBED,
+                onClick = { selectedSection = SECTION_SUBSCRIBED },
+                text = { Text("收藏 (${subscribedPlaylists.size})") }
+            )
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = PLAYLIST_GRID_CELL_SIZE),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
+                start = 6.dp,
+                end = 6.dp,
                 bottom = 24.dp
             ),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (isLoading && playlists.isEmpty()) {
                 fullWidthItem {
@@ -222,28 +265,22 @@ fun NeteasePlaylistScreen(
                 }
             }
 
-            if (!isLoading && errorMessage == null && playlists.isEmpty()) {
+            if (!isLoading && errorMessage == null && visiblePlaylists.isEmpty()) {
                 fullWidthItem {
                     Text(
-                        text = "没有找到公开可见的歌单",
+                        text = if (selectedSection == SECTION_CREATED) {
+                            "没有找到公开创建的歌单"
+                        } else {
+                            "没有找到公开收藏的歌单"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(vertical = 32.dp)
                     )
                 }
             }
 
-            if (createdPlaylists.isNotEmpty()) {
-                sectionTitle("创建的歌单")
-                items(createdPlaylists, key = { "created-${it.id}" }) { playlist ->
-                    PlaylistCard(playlist, onClick = { selectedPlaylist = playlist })
-                }
-            }
-
-            if (subscribedPlaylists.isNotEmpty()) {
-                sectionTitle("收藏的歌单")
-                items(subscribedPlaylists, key = { "subscribed-${it.id}" }) { playlist ->
-                    PlaylistCard(playlist, onClick = { selectedPlaylist = playlist })
-                }
+            items(visiblePlaylists, key = { it.id }) { playlist ->
+                PlaylistCard(playlist, onClick = { selectedPlaylist = playlist })
             }
 
             fullWidthItem {
@@ -253,6 +290,7 @@ fun NeteasePlaylistScreen(
                     onRefresh = ::refresh,
                     onExit = {
                         requestVersion++
+                        clearPlaylistCache(preferences)
                         preferences.edit().remove(USER_ID_KEY).apply()
                         savedUserId = ""
                         inputUserId = ""
@@ -474,7 +512,7 @@ private fun UserIdInput(
             Text("保存并加载")
         }
         Text(
-            text = "用户 ID 会保存在本机；重新打开此页面时会自动刷新。私密歌单不会显示。",
+            text = "用户 ID 和歌单会缓存在本机，每 24 小时自动刷新一次。私密歌单不会显示。",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 16.dp)
         )
@@ -485,52 +523,103 @@ private fun LazyGridScope.fullWidthItem(content: @Composable () -> Unit) {
     item(span = { GridItemSpan(maxLineSpan) }) { content() }
 }
 
-private fun LazyGridScope.sectionTitle(title: String) {
-    fullWidthItem {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
-        )
-    }
-}
-
 @Composable
 private fun PlaylistCard(
     playlist: NeteasePlaylist,
     onClick: () -> Unit
 ) {
-    Box(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.TopCenter
+        onClick = onClick
     ) {
-        Card(
-            modifier = Modifier.width(PLAYLIST_CARD_SIZE),
-            onClick = onClick
-        ) {
-            Column {
-                PlaylistCover(
-                    playlist = playlist,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                )
-                Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp)
-                )
-                Text(
-                    text = "${playlist.trackCount} 首",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 8.dp)
+        Column {
+            PlaylistCover(
+                playlist = playlist,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+            )
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 6.dp, top = 6.dp, end = 6.dp)
+            )
+            Text(
+                text = "${playlist.trackCount} 首",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp, top = 2.dp, bottom = 6.dp)
+            )
+        }
+    }
+}
+
+private fun readCachedPlaylists(
+    preferences: SharedPreferences,
+    userId: String
+): List<NeteasePlaylist> {
+    if (
+        userId.isBlank() ||
+        preferences.getString(CACHED_USER_ID_KEY, "") != userId
+    ) {
+        return emptyList()
+    }
+
+    return try {
+        val array = JSONArray(preferences.getString(CACHED_PLAYLISTS_KEY, "[]"))
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optString("id")
+                if (id.isBlank()) continue
+
+                add(
+                    NeteasePlaylist(
+                        id = id,
+                        name = item.optString("name", "未命名歌单"),
+                        coverUrl = item.optString("coverUrl"),
+                        trackCount = item.optInt("trackCount", 0),
+                        creatorId = item.optString("creatorId")
+                    )
                 )
             }
         }
+    } catch (_: Exception) {
+        emptyList()
     }
+}
+
+private fun saveCachedPlaylists(
+    preferences: SharedPreferences,
+    userId: String,
+    playlists: List<NeteasePlaylist>
+) {
+    val array = JSONArray()
+    playlists.forEach { playlist ->
+        array.put(
+            JSONObject()
+                .put("id", playlist.id)
+                .put("name", playlist.name)
+                .put("coverUrl", playlist.coverUrl)
+                .put("trackCount", playlist.trackCount)
+                .put("creatorId", playlist.creatorId)
+        )
+    }
+
+    preferences.edit()
+        .putString(CACHED_USER_ID_KEY, userId)
+        .putString(CACHED_PLAYLISTS_KEY, array.toString())
+        .apply()
+}
+
+private fun clearPlaylistCache(preferences: SharedPreferences) {
+    preferences.edit()
+        .remove(CACHED_USER_ID_KEY)
+        .remove(CACHED_PLAYLISTS_KEY)
+        .remove(LAST_REFRESH_ATTEMPT_KEY)
+        .apply()
 }
 
 @Composable
@@ -593,7 +682,12 @@ private fun PlaylistFooter(
     }
 }
 
-private val PLAYLIST_GRID_CELL_SIZE = 104.dp
-private val PLAYLIST_CARD_SIZE = 96.dp
+private val PLAYLIST_GRID_CELL_SIZE = 100.dp
+private const val SECTION_CREATED = 0
+private const val SECTION_SUBSCRIBED = 1
 private const val PREFERENCES_NAME = "netease_playlist_preferences"
 private const val USER_ID_KEY = "netease_user_id"
+private const val CACHED_USER_ID_KEY = "cached_user_id"
+private const val CACHED_PLAYLISTS_KEY = "cached_playlists"
+private const val LAST_REFRESH_ATTEMPT_KEY = "last_refresh_attempt"
+private const val REFRESH_INTERVAL_MS = 24L * 60L * 60L * 1000L

@@ -201,6 +201,14 @@ class ComposeMainActivity : ComponentActivity() {
                         musicController.switchPlayMode()
                     },
 
+                    onSkipPrevious = {
+                        musicController.playPrevious()
+                    },
+
+                    onSkipNext = {
+                        musicController.playNext()
+                    },
+
                     onQueueTrackClick = { index ->
                         musicController.playAtIndex(index)
                     },

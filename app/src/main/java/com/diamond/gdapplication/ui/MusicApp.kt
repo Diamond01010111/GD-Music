@@ -92,6 +92,8 @@ fun MusicApp(
     onAddToLocalPlaylist: (String, Track) -> Unit,
     onDeleteFavorite: (String) -> Unit,
     onRemoveLocalPlaylistTrack: (String, Track) -> Unit,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
     onPlayNext: (Track) -> Unit
 ) {
     var currentPage by remember {
@@ -180,7 +182,9 @@ fun MusicApp(
                     onSwitchPlayMode = onSwitchPlayMode,
                     onOpenQueue = {
                         showQueue = true
-                    }
+                    },
+                    onSwipePrevious = onSkipPrevious,
+                    onSwipeNext = onSkipNext
                 )
 
                 if (showNavigationBar) {
