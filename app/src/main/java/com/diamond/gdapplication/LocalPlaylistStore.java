@@ -282,6 +282,7 @@ public class LocalPlaylistStore {
                 );
 
                 track.picUrl = object.optString("picUrl", "");
+                track.externalMetadata = object.optBoolean("externalMetadata", false);
                 tracks.add(track);
             } catch (Exception exception) {
                 exception.printStackTrace();
@@ -324,6 +325,7 @@ public class LocalPlaylistStore {
             object.put("picId", track.picId);
             object.put("lyricId", track.lyricId);
             object.put("picUrl", track.picUrl == null ? "" : track.picUrl);
+            object.put("externalMetadata", track.externalMetadata);
             array.put(object);
         }
 

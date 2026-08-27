@@ -265,7 +265,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
             return;
         }
 
-        musicApi.getAudioUrl(location.track, 999, new GdMusicApi.TrackCallback() {
+        GdMusicApi.TrackCallback callback = new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track track) {
                 if (isPresent(track.audioUrl)) {
@@ -278,7 +278,13 @@ public final class AutoPlaybackService extends MediaLibraryService {
             public void onError(Exception error) {
                 resolvePlayableItems(requested, index + 1, resolved, future);
             }
-        });
+        };
+
+        if (location.track.externalMetadata) {
+            musicApi.resolveExternalTrack(location.track, 999, callback);
+        } else {
+            musicApi.getAudioUrl(location.track, 999, callback);
+        }
     }
 
     @Nullable

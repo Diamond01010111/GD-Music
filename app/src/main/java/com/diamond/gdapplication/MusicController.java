@@ -50,6 +50,7 @@ public class MusicController {
     private final Random random = new Random();
 
     private int currentIndex = -1;
+    private volatile int playRequestVersion = 0;
     private PlayMode playMode = PlayMode.LIST_LOOP;
 
     private Listener listener;
@@ -276,12 +277,56 @@ public class MusicController {
             return;
         }
 
+        int requestVersion = ++playRequestVersion;
         Track track = playlist.get(currentIndex);
         notifyTrackChanged(track);
         notifyQueueChanged();
 
+        if (track.externalMetadata) {
+            setStatus(
+                    "正在为外部歌单匹配歌曲：\n"
+                            + track.name + "\n"
+                            + track.artist + "\n\n"
+                            + "只会采用至少一位歌手相同的结果，"
+                            + "无可播放地址时会继续尝试其他来源。"
+            );
+
+            api.resolveExternalTrack(
+                    track,
+                    audioQuality,
+                    new GdMusicApi.TrackCallback() {
+                        @Override
+                        public void onSuccess(Track resolvedTrack) {
+                            mainHandler.post(() -> {
+                                if (!isCurrentPlayRequest(requestVersion)) {
+                                    return;
+                                }
+
+                                playlist.set(currentIndex, resolvedTrack);
+                                notifyTrackChanged(resolvedTrack);
+                                notifyQueueChanged();
+                                setStatusDirect(buildNowPlayingText(resolvedTrack));
+                                playerManager.playTrack(resolvedTrack);
+                                requestPicAndLyric(resolvedTrack, requestVersion);
+                            });
+                        }
+
+                        @Override
+                        public void onError(Exception e) {
+                            if (isCurrentPlayRequest(requestVersion)) {
+                                setStatus("外部歌曲匹配失败：\n" + e.getMessage());
+                            }
+                        }
+                    }
+            );
+            return;
+        }
+
         if (hasValidCachedAudioUrl(track)) {
             mainHandler.post(() -> {
+                if (!isCurrentPlayRequest(requestVersion)) {
+                    return;
+                }
                 setStatusDirect(
                         "使用缓存播放：\n"
                                 + track.name + "\n"
@@ -313,6 +358,9 @@ public class MusicController {
         api.getAudioUrl(track, audioQuality, new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track updatedTrack) {
+                if (!isCurrentPlayRequest(requestVersion)) {
+                    return;
+                }
                 if (updatedTrack.audioUrl == null
                         || updatedTrack.audioUrl.isEmpty()
                         || updatedTrack.audioUrl.equals("null")) {
@@ -325,18 +373,29 @@ public class MusicController {
                 }
 
                 mainHandler.post(() -> {
+                    if (!isCurrentPlayRequest(requestVersion)) {
+                        return;
+                    }
                     setStatusDirect(buildNowPlayingText(updatedTrack));
                     playerManager.playTrack(updatedTrack);
                 });
 
-                requestPicAndLyric(updatedTrack);
+                requestPicAndLyric(updatedTrack, requestVersion);
             }
 
             @Override
             public void onError(Exception e) {
-                setStatus("获取播放 URL 失败：\n" + e.getMessage());
+                if (isCurrentPlayRequest(requestVersion)) {
+                    setStatus("获取播放 URL 失败：\n" + e.getMessage());
+                }
             }
         });
+    }
+
+    private boolean isCurrentPlayRequest(int requestVersion) {
+        return requestVersion == playRequestVersion
+                && currentIndex >= 0
+                && currentIndex < playlist.size();
     }
 
     private String buildNowPlayingText(Track track) {
@@ -361,10 +420,13 @@ public class MusicController {
         return text;
     }
 
-    private void requestPicAndLyric(Track track) {
+    private void requestPicAndLyric(Track track, int requestVersion) {
         api.getPicUrl(track, new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track updatedTrack) {
+                if (!isCurrentPlayRequest(requestVersion)) {
+                    return;
+                }
                 notifyTrackChanged(updatedTrack);
 
                 if (updatedTrack.picUrl != null
@@ -377,13 +439,18 @@ public class MusicController {
 
             @Override
             public void onError(Exception e) {
-                appendStatus("\n\n获取专辑图失败：" + e.getMessage());
+                if (isCurrentPlayRequest(requestVersion)) {
+                    appendStatus("\n\n获取专辑图失败：" + e.getMessage());
+                }
             }
         });
 
         api.getLyric(track, new GdMusicApi.TrackCallback() {
             @Override
             public void onSuccess(Track updatedTrack) {
+                if (!isCurrentPlayRequest(requestVersion)) {
+                    return;
+                }
                 int lyricLength = updatedTrack.lyric == null ? 0 : updatedTrack.lyric.length();
                 int translatedLength = updatedTrack.translatedLyric == null ? 0 : updatedTrack.translatedLyric.length();
 
@@ -394,7 +461,9 @@ public class MusicController {
 
             @Override
             public void onError(Exception e) {
-                appendStatus("\n\n获取歌词失败：" + e.getMessage());
+                if (isCurrentPlayRequest(requestVersion)) {
+                    appendStatus("\n\n获取歌词失败：" + e.getMessage());
+                }
             }
         });
     }
@@ -586,6 +655,7 @@ public class MusicController {
     }
 
     public void clearPlaylist() {
+        playRequestVersion++;
         playlist.clear();
         currentIndex = -1;
 
@@ -610,6 +680,7 @@ public class MusicController {
 
         // 删除后队列为空
         if (playlist.isEmpty()) {
+            playRequestVersion++;
             currentIndex = -1;
 
             playerManager.stopAndClear();

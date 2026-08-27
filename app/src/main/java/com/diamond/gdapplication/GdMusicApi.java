@@ -5,8 +5,12 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -15,6 +19,12 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class GdMusicApi {
+
+    private static final String[] PLAYABLE_SOURCES = {
+            "netease",
+            "joox",
+            "bilibili"
+    };
 
     private final OkHttpClient client = new OkHttpClient();
 
@@ -26,6 +36,229 @@ public class GdMusicApi {
     public interface TrackCallback {
         void onSuccess(Track track);
         void onError(Exception e);
+    }
+
+    public void resolveExternalTrack(
+            Track reference,
+            int br,
+            TrackCallback callback
+    ) {
+        if (reference == null
+                || reference.name == null
+                || reference.name.trim().isEmpty()
+                || reference.artist == null
+                || reference.artist.trim().isEmpty()) {
+            callback.onError(new IllegalArgumentException("外部歌曲缺少歌曲名或歌手"));
+            return;
+        }
+
+        List<String> sources = new ArrayList<>();
+        if (reference.source != null && !reference.source.trim().isEmpty()) {
+            sources.add(reference.source);
+        }
+        for (String source : PLAYABLE_SOURCES) {
+            if (!sources.contains(source)) {
+                sources.add(source);
+            }
+        }
+
+        tryResolveFromSource(reference, br, sources, 0, callback);
+    }
+
+    private void tryResolveFromSource(
+            Track reference,
+            int br,
+            List<String> sources,
+            int sourceIndex,
+            TrackCallback callback
+    ) {
+        if (sourceIndex >= sources.size()) {
+            callback.onError(
+                    new Exception(
+                            "没有找到歌手匹配且可播放的音源："
+                                    + reference.name
+                                    + " - "
+                                    + reference.artist
+                    )
+            );
+            return;
+        }
+
+        String source = sources.get(sourceIndex);
+        searchTracks(
+                reference.name,
+                source,
+                15,
+                1,
+                new SearchCallback() {
+                    @Override
+                    public void onSuccess(List<Track> tracks) {
+                        List<Track> matches = matchingArtistCandidates(reference, tracks);
+                        if (matches.isEmpty()) {
+                            tryResolveFromSource(
+                                    reference,
+                                    br,
+                                    sources,
+                                    sourceIndex + 1,
+                                    callback
+                            );
+                            return;
+                        }
+
+                        tryPlayableCandidate(
+                                reference,
+                                br,
+                                sources,
+                                sourceIndex,
+                                matches,
+                                0,
+                                callback
+                        );
+                    }
+
+                    @Override
+                    public void onError(Exception e) {
+                        tryResolveFromSource(
+                                reference,
+                                br,
+                                sources,
+                                sourceIndex + 1,
+                                callback
+                        );
+                    }
+                }
+        );
+    }
+
+    private void tryPlayableCandidate(
+            Track reference,
+            int br,
+            List<String> sources,
+            int sourceIndex,
+            List<Track> candidates,
+            int candidateIndex,
+            TrackCallback callback
+    ) {
+        if (candidateIndex >= candidates.size()) {
+            tryResolveFromSource(
+                    reference,
+                    br,
+                    sources,
+                    sourceIndex + 1,
+                    callback
+            );
+            return;
+        }
+
+        Track candidate = candidates.get(candidateIndex);
+        getAudioUrl(candidate, br, new TrackCallback() {
+            @Override
+            public void onSuccess(Track resolved) {
+                if (resolved.audioUrl == null
+                        || resolved.audioUrl.isEmpty()
+                        || "null".equals(resolved.audioUrl)) {
+                    tryPlayableCandidate(
+                            reference,
+                            br,
+                            sources,
+                            sourceIndex,
+                            candidates,
+                            candidateIndex + 1,
+                            callback
+                    );
+                    return;
+                }
+
+                if ((resolved.picUrl == null || resolved.picUrl.isEmpty())
+                        && reference.picUrl != null
+                        && !reference.picUrl.isEmpty()) {
+                    resolved.picUrl = reference.picUrl;
+                }
+                resolved.externalMetadata = false;
+                callback.onSuccess(resolved);
+            }
+
+            @Override
+            public void onError(Exception e) {
+                tryPlayableCandidate(
+                        reference,
+                        br,
+                        sources,
+                        sourceIndex,
+                        candidates,
+                        candidateIndex + 1,
+                        callback
+                );
+            }
+        });
+    }
+
+    private List<Track> matchingArtistCandidates(
+            Track reference,
+            List<Track> tracks
+    ) {
+        List<Track> exactTitleMatches = new ArrayList<>();
+        List<Track> otherMatches = new ArrayList<>();
+        String referenceTitle = normalizeText(reference.name);
+
+        if (tracks == null) {
+            return exactTitleMatches;
+        }
+
+        for (Track candidate : tracks) {
+            if (!hasMatchingArtist(reference.artist, candidate.artist)) {
+                continue;
+            }
+
+            if (referenceTitle.equals(normalizeText(candidate.name))) {
+                exactTitleMatches.add(candidate);
+            } else {
+                otherMatches.add(candidate);
+            }
+        }
+
+        exactTitleMatches.addAll(otherMatches);
+        return exactTitleMatches;
+    }
+
+    static boolean hasMatchingArtist(String first, String second) {
+        Set<String> firstArtists = normalizedArtists(first);
+        Set<String> secondArtists = normalizedArtists(second);
+
+        for (String artist : firstArtists) {
+            if (secondArtists.contains(artist)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<String> normalizedArtists(String raw) {
+        Set<String> artists = new LinkedHashSet<>();
+        if (raw == null || raw.trim().isEmpty()) {
+            return artists;
+        }
+
+        String[] parts = raw.split(
+                "(?i)\\s*(?:、|,|，|/|&|\\bfeat\\.?\\b|\\bft\\.?\\b)\\s*"
+        );
+        for (String part : parts) {
+            String normalized = normalizeText(part);
+            if (!normalized.isEmpty()) {
+                artists.add(normalized);
+            }
+        }
+        return artists;
+    }
+
+    private static String normalizeText(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return Normalizer.normalize(value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
     public void searchTracks(String keywordRaw, SearchCallback callback) {
