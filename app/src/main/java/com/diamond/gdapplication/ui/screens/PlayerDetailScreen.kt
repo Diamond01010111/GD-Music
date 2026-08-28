@@ -89,6 +89,8 @@ fun PlayerDetailScreen(
     onSeekTo: (Long) -> Unit,
     onRequestLyrics: (Track, String?, (Result<Track>) -> Unit) -> Unit,
     onSwitchSongSource: (Track, String, (Result<Unit>) -> Unit) -> Unit,
+    currentBitrate: Int,
+    onChangeCurrentQuality: (Track, Int, (Result<Unit>) -> Unit) -> Unit,
     onPlayNext: (Track) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
@@ -219,6 +221,7 @@ fun PlayerDetailScreen(
             onSearchAlbum = { album -> onSearchAlbum(album, track.source) },
             songSource = track.source,
             lyricSource = lyricSource,
+            currentBitrate = currentBitrate,
             onSwitchSongSource = { source ->
                 sourceMessage = null
                 onSwitchSongSource(track, source) { result ->
@@ -227,7 +230,15 @@ fun PlayerDetailScreen(
                     }
                 }
             },
-            onSwitchLyricSource = ::loadLyrics
+            onSwitchLyricSource = ::loadLyrics,
+            onChangeQuality = { bitrate ->
+                sourceMessage = null
+                onChangeCurrentQuality(track, bitrate) { result ->
+                    result.onFailure { error ->
+                        sourceMessage = error.message ?: "音质切换失败"
+                    }
+                }
+            }
         )
     }
 }

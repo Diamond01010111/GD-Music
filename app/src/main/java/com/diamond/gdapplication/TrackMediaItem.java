@@ -25,6 +25,7 @@ public final class TrackMediaItem {
     private static final String KEY_AUDIO_CACHED_AT = KEY_PREFIX + "audio_cached_at";
     private static final String KEY_PIC_URL = KEY_PREFIX + "pic_url";
     private static final String KEY_EXTERNAL = KEY_PREFIX + "external";
+    private static final String KEY_REQUESTED_BITRATE = KEY_PREFIX + "requested_bitrate";
 
     private TrackMediaItem() {
     }
@@ -42,6 +43,7 @@ public final class TrackMediaItem {
         extras.putLong(KEY_AUDIO_CACHED_AT, track.audioUrlCachedAt);
         extras.putString(KEY_PIC_URL, value(track.picUrl));
         extras.putBoolean(KEY_EXTERNAL, track.externalMetadata);
+        extras.putInt(KEY_REQUESTED_BITRATE, track.requestedBitrate);
 
         MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                 .setTitle(track.name)
@@ -87,6 +89,7 @@ public final class TrackMediaItem {
         track.audioUrlCachedAt = extras.getLong(KEY_AUDIO_CACHED_AT, 0L);
         track.picUrl = extras.getString(KEY_PIC_URL, "");
         track.externalMetadata = extras.getBoolean(KEY_EXTERNAL, false);
+        track.requestedBitrate = extras.getInt(KEY_REQUESTED_BITRATE, 0);
         return track;
     }
 

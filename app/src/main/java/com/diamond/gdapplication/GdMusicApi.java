@@ -155,6 +155,7 @@ public class GdMusicApi {
                     resolved.picUrl = reference.picUrl;
                 }
                 resolved.externalMetadata = false;
+                resolved.requestedBitrate = reference.requestedBitrate;
                 callback.onSuccess(resolved);
             }
 
@@ -375,6 +376,7 @@ public class GdMusicApi {
         copy.audioUrlCachedAt = source.audioUrlCachedAt;
         copy.picUrl = source.picUrl;
         copy.externalMetadata = source.externalMetadata;
+        copy.requestedBitrate = source.requestedBitrate;
         return copy;
     }
 
@@ -407,6 +409,7 @@ public class GdMusicApi {
                     .get()
                     .build();
 
+            RequestTracker.record();
             client.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {
@@ -500,6 +503,7 @@ public class GdMusicApi {
                     .get()
                     .build();
 
+            RequestTracker.record();
             client.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {
@@ -556,6 +560,7 @@ public class GdMusicApi {
 
             Request request = new Request.Builder().url(url).get().build();
 
+            RequestTracker.record();
             client.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {
@@ -599,6 +604,7 @@ public class GdMusicApi {
 
             Request request = new Request.Builder().url(url).get().build();
 
+            RequestTracker.record();
             client.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {

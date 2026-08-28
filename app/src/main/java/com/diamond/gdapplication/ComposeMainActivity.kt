@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,6 +25,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.diamond.gdapplication.model.SearchCategory
+import com.diamond.gdapplication.data.NeteasePlaylist
+import com.diamond.gdapplication.data.NeteasePlaylistRepository
 import com.diamond.gdapplication.ui.MusicApp
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
@@ -33,6 +37,7 @@ class ComposeMainActivity : ComponentActivity() {
 
     private lateinit var api: GdMusicApi
     private lateinit var localPlaylistStore: LocalPlaylistStore
+    private lateinit var neteaseRepository: NeteasePlaylistRepository
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController by mutableStateOf<MediaController?>(null)
     private var lastRootBackAt = 0L
@@ -44,11 +49,20 @@ class ComposeMainActivity : ComponentActivity() {
         enableEdgeToEdge()
         api = GdMusicApi()
         localPlaylistStore = LocalPlaylistStore(this)
+        neteaseRepository = NeteasePlaylistRepository()
         requestNotificationPermission()
         connectToPlaybackService()
 
         setContent {
-            MaterialTheme {
+            var darkMode by remember {
+                mutableStateOf(PlaybackPreferences.darkMode(this))
+            }
+            var defaultBitrate by remember {
+                mutableStateOf(PlaybackPreferences.defaultBitrate(this))
+            }
+            MaterialTheme(
+                colorScheme = if (darkMode) darkColorScheme() else lightColorScheme()
+            ) {
                 val controller = mediaController
                 var currentTrack by remember { mutableStateOf<Track?>(null) }
                 var artworkUrl by remember { mutableStateOf("") }
@@ -180,6 +194,8 @@ class ComposeMainActivity : ComponentActivity() {
                     playbackPositionMs = playbackPositionMs,
                     playbackDurationMs = playbackDurationMs,
                     localPlaylists = localPlaylists,
+                    defaultBitrate = defaultBitrate,
+                    darkMode = darkMode,
 
                     onRequestSearch = { keyword, category, source, page, callback ->
                         requestTracks(keyword, category, source, page, callback)
@@ -187,6 +203,26 @@ class ComposeMainActivity : ComponentActivity() {
 
                     onRequestLyrics = ::requestLyrics,
                     onSwitchCurrentSource = ::switchCurrentSource,
+                    onChangeCurrentQuality = ::changeCurrentQuality,
+
+                    onRequestNeteasePlaylists = ::requestNeteasePlaylists,
+                    onImportNeteasePlaylist = { playlist, callback ->
+                        importNeteasePlaylist(playlist) { result ->
+                            if (result.isSuccess) {
+                                localPlaylists = localPlaylistStore.playlists
+                            }
+                            callback(result)
+                        }
+                    },
+
+                    onDefaultBitrateChange = { bitrate ->
+                        PlaybackPreferences.setDefaultBitrate(this, bitrate)
+                        defaultBitrate = AudioQuality.fromBitrate(bitrate).bitrate
+                    },
+                    onDarkModeChange = { enabled ->
+                        PlaybackPreferences.setDarkMode(this, enabled)
+                        darkMode = enabled
+                    },
 
                     onPlayResults = ::playTracks,
 
@@ -542,29 +578,16 @@ class ComposeMainActivity : ComponentActivity() {
         api.resolveTrackFromSource(
             reference,
             source,
-            999,
+            if (reference.requestedBitrate > 0) {
+                reference.requestedBitrate
+            } else {
+                PlaybackPreferences.defaultBitrate(this)
+            },
             object : GdMusicApi.TrackCallback {
                 override fun onSuccess(resolvedTrack: Track) {
                     runOnUiThread {
-                        val controller = mediaController
-                        if (controller == null || controller.mediaItemCount == 0) {
-                            callback(Result.failure(IllegalStateException("播放器未连接")))
-                            return@runOnUiThread
-                        }
-
-                        val index = controller.currentMediaItemIndex
-                        val position = controller.currentPosition.coerceAtLeast(0L)
-                        val shouldResume = controller.playWhenReady
-                        val mediaId = controller.currentMediaItem?.mediaId
-                            ?: "source:${SystemClock.elapsedRealtime()}:${resolvedTrack.id}"
-                        controller.replaceMediaItem(
-                            index,
-                            TrackMediaItem.create(mediaId, resolvedTrack)
-                        )
-                        controller.seekTo(index, position)
-                        controller.prepare()
-                        if (shouldResume) controller.play()
-                        callback(Result.success(Unit))
+                        resolvedTrack.requestedBitrate = reference.requestedBitrate
+                        replaceCurrentTrack(resolvedTrack, callback)
                     }
                 }
 
@@ -573,6 +596,69 @@ class ComposeMainActivity : ComponentActivity() {
                 }
             }
         )
+    }
+
+    private fun changeCurrentQuality(
+        reference: Track,
+        bitrate: Int,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        reference.requestedBitrate = AudioQuality.fromBitrate(bitrate).bitrate
+        reference.audioUrl = ""
+        reference.audioUrlCachedAt = 0L
+        replaceCurrentTrack(reference, callback)
+    }
+
+    private fun replaceCurrentTrack(
+        track: Track,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        val controller = mediaController
+        if (controller == null || controller.mediaItemCount == 0) {
+            callback(Result.failure(IllegalStateException("播放器未连接")))
+            return
+        }
+
+        val index = controller.currentMediaItemIndex
+        val position = controller.currentPosition.coerceAtLeast(0L)
+        val shouldResume = controller.playWhenReady
+        val mediaId = controller.currentMediaItem?.mediaId
+            ?: "replace:${SystemClock.elapsedRealtime()}:${track.id}"
+        controller.replaceMediaItem(index, TrackMediaItem.create(mediaId, track))
+        controller.seekTo(index, position)
+        controller.prepare()
+        if (shouldResume) controller.play()
+        callback(Result.success(Unit))
+    }
+
+    private fun requestNeteasePlaylists(
+        keyword: String,
+        page: Int,
+        callback: (Result<List<NeteasePlaylist>>) -> Unit
+    ) {
+        neteaseRepository.searchPlaylists(
+            keyword,
+            page,
+            SEARCH_RESULT_COUNT,
+            callback
+        )
+    }
+
+    private fun importNeteasePlaylist(
+        playlist: NeteasePlaylist,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        neteaseRepository.loadPlaylistTracks(playlist.id) { result ->
+            result.onSuccess { tracks ->
+                val imported = localPlaylistStore.createPlaylist(playlist.name, tracks)
+                if (imported == null) {
+                    callback(Result.failure(IllegalStateException("创建收藏失败")))
+                } else {
+                    callback(Result.success(Unit))
+                }
+            }
+            result.onFailure { callback(Result.failure(it)) }
+        }
     }
 
     private fun lyricCacheKey(track: Track, preferredSource: String?): String =

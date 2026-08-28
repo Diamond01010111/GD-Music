@@ -49,6 +49,7 @@ import coil3.compose.AsyncImage
 import com.diamond.gdapplication.LocalPlaylistStore
 import com.diamond.gdapplication.PlaybackMode
 import com.diamond.gdapplication.Track
+import com.diamond.gdapplication.data.NeteasePlaylist
 import com.diamond.gdapplication.model.AppPage
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.components.MiniPlayer
@@ -72,6 +73,8 @@ fun MusicApp(
     playbackPositionMs: Long,
     playbackDurationMs: Long,
     localPlaylists: List<LocalPlaylistStore.LocalPlaylist>,
+    defaultBitrate: Int,
+    darkMode: Boolean,
 
     onRequestSearch: (
         keyword: String,
@@ -81,8 +84,21 @@ fun MusicApp(
         callback: (Result<List<Track>>) -> Unit
     ) -> Unit,
 
+    onRequestNeteasePlaylists: (
+        keyword: String,
+        page: Int,
+        callback: (Result<List<NeteasePlaylist>>) -> Unit
+    ) -> Unit,
+    onImportNeteasePlaylist: (
+        playlist: NeteasePlaylist,
+        callback: (Result<Unit>) -> Unit
+    ) -> Unit,
+
     onRequestLyrics: (Track, String?, (Result<Track>) -> Unit) -> Unit,
     onSwitchCurrentSource: (Track, String, (Result<Unit>) -> Unit) -> Unit,
+    onChangeCurrentQuality: (Track, Int, (Result<Unit>) -> Unit) -> Unit,
+    onDefaultBitrateChange: (Int) -> Unit,
+    onDarkModeChange: (Boolean) -> Unit,
 
     onPlayResults: (
         tracks: List<Track>,
@@ -125,6 +141,10 @@ fun MusicApp(
 
     var resultTracks by remember {
         mutableStateOf<List<Track>>(emptyList())
+    }
+
+    var resultPlaylists by remember {
+        mutableStateOf<List<NeteasePlaylist>>(emptyList())
     }
 
     var isSearching by remember {
@@ -174,22 +194,42 @@ fun MusicApp(
         isLoadingMore = false
         searchError = null
 
-        onRequestSearch(keyword, category, source, 1) { result ->
-            if (generation == searchGeneration) {
-                isSearching = false
-
-                result.onSuccess { tracks ->
-                    resultKeyword = keyword
-                    resultCategory = category
-                    resultSource = source
-                    resultTracks = tracks
-                    resultPage = 1
-                    hasMoreResults = tracks.size >= SEARCH_PAGE_SIZE
-                    currentPage = AppPage.SEARCH_RESULTS
+        if (category == SearchCategory.NETEASE_PLAYLIST) {
+            onRequestNeteasePlaylists(keyword, 1) { result ->
+                if (generation == searchGeneration) {
+                    isSearching = false
+                    result.onSuccess { playlists ->
+                        resultKeyword = keyword
+                        resultCategory = category
+                        resultSource = "netease"
+                        resultTracks = emptyList()
+                        resultPlaylists = playlists
+                        resultPage = 1
+                        hasMoreResults = playlists.size >= SEARCH_PAGE_SIZE
+                        currentPage = AppPage.SEARCH_RESULTS
+                    }
+                    result.onFailure { error ->
+                        searchError = error.message ?: "歌单搜索失败"
+                    }
                 }
-
-                result.onFailure { error ->
-                    searchError = error.message ?: "搜索失败"
+            }
+        } else {
+            onRequestSearch(keyword, category, source, 1) { result ->
+                if (generation == searchGeneration) {
+                    isSearching = false
+                    result.onSuccess { tracks ->
+                        resultKeyword = keyword
+                        resultCategory = category
+                        resultSource = source
+                        resultTracks = tracks
+                        resultPlaylists = emptyList()
+                        resultPage = 1
+                        hasMoreResults = tracks.size >= SEARCH_PAGE_SIZE
+                        currentPage = AppPage.SEARCH_RESULTS
+                    }
+                    result.onFailure { error ->
+                        searchError = error.message ?: "搜索失败"
+                    }
                 }
             }
         }
@@ -205,7 +245,26 @@ fun MusicApp(
         val generation = searchGeneration
         isLoadingMore = true
 
-        onRequestSearch(keyword, category, source, nextPage) { result ->
+        fun searchChanged(): Boolean = generation != searchGeneration ||
+            keyword != resultKeyword ||
+            category != resultCategory ||
+            source != resultSource
+
+        if (category == SearchCategory.NETEASE_PLAYLIST) {
+            onRequestNeteasePlaylists(keyword, nextPage) { result ->
+                if (!searchChanged()) {
+                    isLoadingMore = false
+                    result.onSuccess { playlists ->
+                        resultPlaylists = (resultPlaylists + playlists).distinctBy { it.id }
+                        resultPage = nextPage
+                        hasMoreResults = playlists.size >= SEARCH_PAGE_SIZE
+                    }
+                    result.onFailure { error ->
+                        searchError = error.message ?: "加载下一页失败"
+                    }
+                }
+            }
+        } else onRequestSearch(keyword, category, source, nextPage) { result ->
             // A new search may have started while this page was loading.
             val searchChanged = generation != searchGeneration ||
                 keyword != resultKeyword ||
@@ -349,6 +408,12 @@ fun MusicApp(
                     onSeekTo = onSeekTo,
                     onRequestLyrics = onRequestLyrics,
                     onSwitchSongSource = onSwitchCurrentSource,
+                    currentBitrate = if (nowPlayingTrack.requestedBitrate > 0) {
+                        nowPlayingTrack.requestedBitrate
+                    } else {
+                        defaultBitrate
+                    },
+                    onChangeCurrentQuality = onChangeCurrentQuality,
                     onPlayNext = onPlayNext,
                     onAddToPlaylist = onAddToPlaylist,
                     onFavorite = { track -> pendingFavoriteTrack = track },
@@ -364,6 +429,10 @@ fun MusicApp(
             } else when (currentPage) {
                 AppPage.HOME -> {
                     HomeScreen(
+                        defaultBitrate = defaultBitrate,
+                        darkMode = darkMode,
+                        onDefaultBitrateChange = onDefaultBitrateChange,
+                        onDarkModeChange = onDarkModeChange,
                         onOpenSearch = {
                             searchError = null
                             currentPage = AppPage.SEARCH
@@ -444,6 +513,7 @@ fun MusicApp(
                         category = resultCategory,
                         source = resultSource,
                         tracks = resultTracks,
+                        playlists = resultPlaylists,
                         isSearching = isSearching,
                         isLoadingMore = isLoadingMore,
                         hasMoreResults = hasMoreResults,
@@ -452,6 +522,7 @@ fun MusicApp(
                         },
                         onSearch = ::executeSearch,
                         onLoadMore = ::loadNextSearchPage,
+                        onImportPlaylist = onImportNeteasePlaylist,
                         onTrackClick = { index ->
                             onPlayResults(resultTracks, index)
                         },

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.Track
+import com.diamond.gdapplication.AudioQuality
 import com.diamond.gdapplication.model.supportedMusicSources
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,13 +28,16 @@ fun TrackMoreBottomSheet(
     songSource: String? = null,
     lyricSource: String? = null,
     onSwitchSongSource: ((String) -> Unit)? = null,
-    onSwitchLyricSource: ((String) -> Unit)? = null
+    onSwitchLyricSource: ((String) -> Unit)? = null,
+    currentBitrate: Int? = null,
+    onChangeQuality: ((Int) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = false
     )
     var choosingArtist by remember(track.id) { mutableStateOf(false) }
     var choosingSource by remember(track.id) { mutableStateOf<SourceTarget?>(null) }
+    var choosingQuality by remember(track.id) { mutableStateOf(false) }
     val artists = remember(track.artist) { splitArtists(track.artist) }
 
     ModalBottomSheet(
@@ -73,7 +77,32 @@ fun TrackMoreBottomSheet(
 
             HorizontalDivider()
 
-            if (choosingSource != null) {
+            if (choosingQuality) {
+                Text(
+                    text = "更改当前歌曲音质",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(20.dp)
+                )
+                Text(
+                    text = "仅对当前歌曲生效，不修改默认音质",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                )
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(AudioQuality.entries, key = { it.bitrate }) { quality ->
+                        ListItem(
+                            headlineContent = { Text(quality.label) },
+                            trailingContent = if (quality.bitrate == currentBitrate) {
+                                { Icon(Icons.Default.Check, contentDescription = "当前音质") }
+                            } else null,
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                onDismiss()
+                                onChangeQuality?.invoke(quality.bitrate)
+                            }
+                        )
+                    }
+                }
+            } else if (choosingSource != null) {
                 Text(
                     text = if (choosingSource == SourceTarget.SONG) {
                         "选择歌曲播放源"
@@ -132,6 +161,16 @@ fun TrackMoreBottomSheet(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
+                    if (currentBitrate != null && onChangeQuality != null) {
+                        item {
+                            SheetAction(
+                                "当前音质：${AudioQuality.fromBitrate(currentBitrate).label}",
+                                Icons.Default.HighQuality
+                            ) {
+                                choosingQuality = true
+                            }
+                        }
+                    }
                     if (songSource != null && onSwitchSongSource != null) {
                         item {
                             SheetAction(
