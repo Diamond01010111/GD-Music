@@ -1,7 +1,5 @@
 package com.diamond.gdapplication.ui.screens
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,10 +55,9 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.data.NeteasePlaylist
+import com.diamond.gdapplication.data.NeteasePlaylistCache
 import com.diamond.gdapplication.data.NeteasePlaylistRepository
 import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
-import org.json.JSONArray
-import org.json.JSONObject
 
 @Composable
 fun NeteasePlaylistScreen(
@@ -72,17 +69,14 @@ fun NeteasePlaylistScreen(
     onSearchAlbum: (String, String) -> Unit
 ) {
     val context = LocalContext.current
-    val preferences = remember {
-        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    }
     val repository = remember { NeteasePlaylistRepository() }
 
     var savedUserId by rememberSaveable {
-        mutableStateOf(preferences.getString(USER_ID_KEY, "").orEmpty())
+        mutableStateOf(NeteasePlaylistCache.savedUserId(context))
     }
     var inputUserId by rememberSaveable { mutableStateOf(savedUserId) }
     var playlists by remember {
-        mutableStateOf(readCachedPlaylists(preferences, savedUserId))
+        mutableStateOf(NeteasePlaylistCache.read(context, savedUserId))
     }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -100,9 +94,7 @@ fun NeteasePlaylistScreen(
         val version = ++requestVersion
         isLoading = true
         errorMessage = null
-        preferences.edit()
-            .putLong(LAST_REFRESH_ATTEMPT_KEY, System.currentTimeMillis())
-            .apply()
+        NeteasePlaylistCache.markRefreshAttempt(context)
 
         repository.loadPublicPlaylists(savedUserId) { result ->
             if (version != requestVersion) return@loadPublicPlaylists
@@ -110,7 +102,7 @@ fun NeteasePlaylistScreen(
             isLoading = false
             result.onSuccess { loaded ->
                 playlists = loaded
-                saveCachedPlaylists(preferences, savedUserId, loaded)
+                NeteasePlaylistCache.save(context, savedUserId, loaded)
             }.onFailure { error ->
                 errorMessage = error.message ?: "刷新网易歌单失败"
             }
@@ -137,16 +129,12 @@ fun NeteasePlaylistScreen(
 
     LaunchedEffect(savedUserId) {
         if (savedUserId.isNotBlank()) {
-            val cached = readCachedPlaylists(preferences, savedUserId)
+            val cached = NeteasePlaylistCache.read(context, savedUserId)
             if (playlists.isEmpty() && cached.isNotEmpty()) {
                 playlists = cached
             }
 
-            val lastAttempt = preferences.getLong(LAST_REFRESH_ATTEMPT_KEY, 0L)
-            if (
-                lastAttempt == 0L ||
-                System.currentTimeMillis() - lastAttempt >= REFRESH_INTERVAL_MS
-            ) {
+            if (NeteasePlaylistCache.shouldRefresh(context)) {
                 refresh()
             }
         }
@@ -169,8 +157,8 @@ fun NeteasePlaylistScreen(
                 if (normalizedId.isBlank()) {
                     errorMessage = "请输入网易云用户 ID"
                 } else {
-                    clearPlaylistCache(preferences)
-                    preferences.edit().putString(USER_ID_KEY, normalizedId).apply()
+                    NeteasePlaylistCache.clear(context)
+                    NeteasePlaylistCache.saveUserId(context, normalizedId)
                     savedUserId = normalizedId
                 }
             }
@@ -290,8 +278,7 @@ fun NeteasePlaylistScreen(
                     onRefresh = ::refresh,
                     onExit = {
                         requestVersion++
-                        clearPlaylistCache(preferences)
-                        preferences.edit().remove(USER_ID_KEY).apply()
+                        NeteasePlaylistCache.clear(context, clearUserId = true)
                         savedUserId = ""
                         inputUserId = ""
                         playlists = emptyList()
@@ -556,72 +543,6 @@ private fun PlaylistCard(
     }
 }
 
-private fun readCachedPlaylists(
-    preferences: SharedPreferences,
-    userId: String
-): List<NeteasePlaylist> {
-    if (
-        userId.isBlank() ||
-        preferences.getString(CACHED_USER_ID_KEY, "") != userId
-    ) {
-        return emptyList()
-    }
-
-    return try {
-        val array = JSONArray(preferences.getString(CACHED_PLAYLISTS_KEY, "[]"))
-        buildList {
-            for (index in 0 until array.length()) {
-                val item = array.optJSONObject(index) ?: continue
-                val id = item.optString("id")
-                if (id.isBlank()) continue
-
-                add(
-                    NeteasePlaylist(
-                        id = id,
-                        name = item.optString("name", "未命名歌单"),
-                        coverUrl = item.optString("coverUrl"),
-                        trackCount = item.optInt("trackCount", 0),
-                        creatorId = item.optString("creatorId")
-                    )
-                )
-            }
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
-}
-
-private fun saveCachedPlaylists(
-    preferences: SharedPreferences,
-    userId: String,
-    playlists: List<NeteasePlaylist>
-) {
-    val array = JSONArray()
-    playlists.forEach { playlist ->
-        array.put(
-            JSONObject()
-                .put("id", playlist.id)
-                .put("name", playlist.name)
-                .put("coverUrl", playlist.coverUrl)
-                .put("trackCount", playlist.trackCount)
-                .put("creatorId", playlist.creatorId)
-        )
-    }
-
-    preferences.edit()
-        .putString(CACHED_USER_ID_KEY, userId)
-        .putString(CACHED_PLAYLISTS_KEY, array.toString())
-        .apply()
-}
-
-private fun clearPlaylistCache(preferences: SharedPreferences) {
-    preferences.edit()
-        .remove(CACHED_USER_ID_KEY)
-        .remove(CACHED_PLAYLISTS_KEY)
-        .remove(LAST_REFRESH_ATTEMPT_KEY)
-        .apply()
-}
-
 @Composable
 private fun PlaylistCover(
     playlist: NeteasePlaylist,
@@ -685,9 +606,3 @@ private fun PlaylistFooter(
 private val PLAYLIST_GRID_CELL_SIZE = 100.dp
 private const val SECTION_CREATED = 0
 private const val SECTION_SUBSCRIBED = 1
-private const val PREFERENCES_NAME = "netease_playlist_preferences"
-private const val USER_ID_KEY = "netease_user_id"
-private const val CACHED_USER_ID_KEY = "cached_user_id"
-private const val CACHED_PLAYLISTS_KEY = "cached_playlists"
-private const val LAST_REFRESH_ATTEMPT_KEY = "last_refresh_attempt"
-private const val REFRESH_INTERVAL_MS = 24L * 60L * 60L * 1000L
