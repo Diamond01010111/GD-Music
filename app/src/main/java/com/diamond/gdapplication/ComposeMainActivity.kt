@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +27,7 @@ class ComposeMainActivity : ComponentActivity() {
     private lateinit var musicController: MusicController
     private lateinit var localPlaylistStore: LocalPlaylistStore
     private lateinit var playbackNotificationManager: PlaybackNotificationManager
+    private var lastRootBackAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -299,7 +301,9 @@ class ComposeMainActivity : ComponentActivity() {
                         } else {
                             showToast("移出收藏失败")
                         }
-                    }
+                    },
+
+                    onRootBack = ::handleRootBack
                 )
             }
         }
@@ -375,6 +379,17 @@ class ComposeMainActivity : ComponentActivity() {
             message,
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    private fun handleRootBack() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRootBackAt <= EXIT_CONFIRM_WINDOW_MS) {
+            finish()
+            return
+        }
+
+        lastRootBackAt = now
+        showToast("再按一次返回键退出")
     }
 
     private fun requestNotificationPermission() {
@@ -467,5 +482,6 @@ class ComposeMainActivity : ComponentActivity() {
         const val SEARCH_RESULT_COUNT = 30
         const val FIRST_PAGE = 1
         const val NOTIFICATION_PERMISSION_REQUEST = 1001
+        const val EXIT_CONFIRM_WINDOW_MS = 2_000L
     }
 }

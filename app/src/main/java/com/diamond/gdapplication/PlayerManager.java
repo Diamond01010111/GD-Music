@@ -3,6 +3,8 @@ package com.diamond.gdapplication;
 import android.content.Context;
 import android.net.Uri;
 
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.Player;
@@ -19,6 +21,13 @@ public class PlayerManager {
 
     public PlayerManager(Context context) {
         player = new ExoPlayer.Builder(context).build();
+        player.setAudioAttributes(
+                new AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                true
+        );
 
         player.addListener(new Player.Listener() {
             @Override

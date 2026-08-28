@@ -1,5 +1,6 @@
 package com.diamond.gdapplication.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,6 +89,17 @@ fun NeteasePlaylistScreen(
     var detailRequestVersion by remember { mutableIntStateOf(0) }
     var selectedSection by rememberSaveable { mutableIntStateOf(SECTION_CREATED) }
 
+    fun closePlaylistDetail() {
+        detailRequestVersion++
+        selectedPlaylist = null
+        selectedTracks = emptyList()
+        trackError = null
+    }
+
+    BackHandler(enabled = selectedPlaylist != null) {
+        closePlaylistDetail()
+    }
+
     fun refresh() {
         if (savedUserId.isBlank()) return
 
@@ -172,12 +184,7 @@ fun NeteasePlaylistScreen(
             tracks = selectedTracks,
             isLoading = isLoadingTracks,
             errorMessage = trackError,
-            onBack = {
-                detailRequestVersion++
-                selectedPlaylist = null
-                selectedTracks = emptyList()
-                trackError = null
-            },
+            onBack = ::closePlaylistDetail,
             onRetry = { loadTracks(playlist) },
             onPlayPlaylist = onPlayPlaylist,
             onPlayNext = onPlayNext,

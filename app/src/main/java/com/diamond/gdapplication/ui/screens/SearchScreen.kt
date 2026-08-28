@@ -1,5 +1,6 @@
 package com.diamond.gdapplication.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +28,8 @@ fun SearchScreen(
         source: String
     ) -> Unit
 ) {
+    BackHandler(onBack = onBack)
+
     val context = LocalContext.current
     val historyStore = remember {
         SearchHistoryStore(context.applicationContext)

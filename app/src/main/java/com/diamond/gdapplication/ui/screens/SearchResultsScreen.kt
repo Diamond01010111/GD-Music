@@ -1,5 +1,6 @@
 package com.diamond.gdapplication.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,8 @@ fun SearchResultsScreen(
     onFavorite: (Track) -> Unit,
     onPlayNext: (Track) -> Unit
 ) {
+    BackHandler(onBack = onBack)
+
     var query by remember { mutableStateOf(keyword) }
     var selectedCategory by remember { mutableStateOf(category) }
     var selectedSource by remember { mutableStateOf(source) }
