@@ -2,7 +2,6 @@ package com.diamond.gdapplication.data
 
 import android.os.Handler
 import android.os.Looper
-import com.diamond.gdapplication.RequestTracker
 import com.diamond.gdapplication.Track
 import okhttp3.Call
 import okhttp3.Callback
@@ -298,7 +297,6 @@ class NeteasePlaylistRepository {
             .get()
             .build()
 
-        RequestTracker.record()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 deliver(callback, Result.failure(e))
@@ -373,7 +371,6 @@ class NeteasePlaylistRepository {
         transform: (JSONObject) -> T
     ): PendingResult<T> {
         return PendingResult { callback ->
-            RequestTracker.record()
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     deliverResult(callback, Result.failure(e))

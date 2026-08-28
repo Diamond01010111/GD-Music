@@ -4,10 +4,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.data.NeteasePlaylist
+import com.diamond.gdapplication.data.NeteasePlaylistRepository
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.components.SearchControls
 import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
@@ -24,6 +27,7 @@ import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun SearchResultsScreen(
@@ -38,22 +42,40 @@ fun SearchResultsScreen(
     onBack: () -> Unit,
     onSearch: (String, SearchCategory, String) -> Unit,
     onLoadMore: () -> Unit,
-    onImportPlaylist: (NeteasePlaylist, (Result<Unit>) -> Unit) -> Unit,
+    onImportPlaylist: (NeteasePlaylist, List<Track>, (Result<Unit>) -> Unit) -> Unit,
+    onPlayPlaylist: (List<Track>, Int) -> Unit,
     onTrackClick: (Int) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
     onPlayNext: (Track) -> Unit
 ) {
-    BackHandler(onBack = onBack)
-
     var query by remember { mutableStateOf(keyword) }
     var selectedCategory by remember { mutableStateOf(category) }
     var selectedSource by remember { mutableStateOf(source) }
     var moreTrack by remember { mutableStateOf<Track?>(null) }
     var morePlaylist by remember { mutableStateOf<NeteasePlaylist?>(null) }
+    var selectedPlaylist by remember { mutableStateOf<NeteasePlaylist?>(null) }
+    var selectedPlaylistTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var isLoadingPlaylist by remember { mutableStateOf(false) }
+    var playlistError by remember { mutableStateOf<String?>(null) }
+    var playlistRequestVersion by remember { mutableIntStateOf(0) }
+    val neteaseRepository = remember { NeteasePlaylistRepository() }
     val listState = rememberLazyListState()
 
+    fun closePlaylist() {
+        playlistRequestVersion++
+        selectedPlaylist = null
+        selectedPlaylistTracks = emptyList()
+        playlistError = null
+        morePlaylist = null
+    }
+
+    BackHandler {
+        if (selectedPlaylist != null) closePlaylist() else onBack()
+    }
+
     LaunchedEffect(keyword, category, source) {
+        closePlaylist()
         query = keyword
         selectedCategory = category
         selectedSource = source
@@ -93,11 +115,62 @@ fun SearchResultsScreen(
     ) {
         val clean = searchKeyword.trim()
         if (clean.isNotEmpty() && !isSearching) {
+            closePlaylist()
             query = clean
             selectedCategory = searchCategory
             selectedSource = searchSource
             onSearch(clean, searchCategory, searchSource)
         }
+    }
+
+    fun loadPlaylist(playlist: NeteasePlaylist) {
+        val version = ++playlistRequestVersion
+        isLoadingPlaylist = true
+        playlistError = null
+        selectedPlaylistTracks = emptyList()
+        neteaseRepository.loadPlaylistTracks(playlist.id) { result ->
+            if (version != playlistRequestVersion) return@loadPlaylistTracks
+            isLoadingPlaylist = false
+            result.onSuccess { selectedPlaylistTracks = it }
+            result.onFailure { error ->
+                playlistError = error.message ?: "加载歌单歌曲失败"
+            }
+        }
+    }
+
+    LaunchedEffect(selectedPlaylist?.id) {
+        selectedPlaylist?.let(::loadPlaylist)
+    }
+
+    selectedPlaylist?.let { playlist ->
+        SearchedPlaylistDetail(
+            playlist = playlist,
+            tracks = selectedPlaylistTracks,
+            isLoading = isLoadingPlaylist,
+            errorMessage = playlistError,
+            onBack = ::closePlaylist,
+            onRetry = { loadPlaylist(playlist) },
+            onMore = { morePlaylist = playlist },
+            onPlayPlaylist = onPlayPlaylist,
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = { artist, trackSource ->
+                search(artist, SearchCategory.SONG, trackSource)
+            },
+            onSearchAlbum = { album, trackSource ->
+                search(album, SearchCategory.ALBUM, trackSource)
+            }
+        )
+        morePlaylist?.let {
+            PlaylistSearchMoreSheet(
+                playlist = playlist,
+                tracks = selectedPlaylistTracks,
+                onDismiss = { morePlaylist = null },
+                onImport = onImportPlaylist
+            )
+        }
+        return
     }
 
     Column(
@@ -171,7 +244,10 @@ fun SearchResultsScreen(
                         key = { index -> "netease-playlist-${playlists[index].id}" }
                     ) { index ->
                         val playlist = playlists[index]
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { selectedPlaylist = playlist }
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
@@ -196,9 +272,6 @@ fun SearchResultsScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
-                                }
-                                IconButton(onClick = { morePlaylist = playlist }) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "更多")
                                 }
                             }
                         }
@@ -279,13 +352,6 @@ fun SearchResultsScreen(
         )
     }
 
-    morePlaylist?.let { playlist ->
-        PlaylistSearchMoreSheet(
-            playlist = playlist,
-            onDismiss = { morePlaylist = null },
-            onImport = onImportPlaylist
-        )
-    }
 }
 
 private const val LOAD_MORE_THRESHOLD = 5
@@ -296,12 +362,160 @@ private fun resultCount(
     playlists: List<NeteasePlaylist>
 ): Int = if (category == SearchCategory.NETEASE_PLAYLIST) playlists.size else tracks.size
 
+@Composable
+private fun SearchedPlaylistDetail(
+    playlist: NeteasePlaylist,
+    tracks: List<Track>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onMore: () -> Unit,
+    onPlayPlaylist: (List<Track>, Int) -> Unit,
+    onPlayNext: (Track) -> Unit,
+    onAddToPlaylist: (Track) -> Unit,
+    onFavorite: (Track) -> Unit,
+    onSearchArtist: (String, String) -> Unit,
+    onSearchAlbum: (String, String) -> Unit
+) {
+    var moreTrack by remember { mutableStateOf<Track?>(null) }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回歌单搜索")
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(
+                enabled = !isLoading && errorMessage == null,
+                onClick = onMore
+            ) {
+                Icon(Icons.Default.MoreVert, contentDescription = "歌单更多")
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 24.dp)
+        ) {
+            item(key = "playlist-header") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    if (playlist.coverUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = playlist.coverUrl,
+                            contentDescription = playlist.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                        Text(
+                            playlist.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            "${if (isLoading) playlist.trackCount else tracks.size} 首歌曲",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                        Button(
+                            enabled = tracks.isNotEmpty() && !isLoading,
+                            onClick = { onPlayPlaylist(tracks, 0) },
+                            modifier = Modifier.padding(top = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Text("播放全部")
+                        }
+                    }
+                }
+            }
+
+            when {
+                isLoading -> item(key = "playlist-loading") {
+                    Box(
+                        Modifier.fillMaxWidth().padding(vertical = 36.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.Center
+                    ) { CircularProgressIndicator() }
+                }
+                errorMessage != null -> item(key = "playlist-error") {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                            Button(onClick = onRetry, modifier = Modifier.padding(top = 10.dp)) {
+                                Text("重试")
+                            }
+                        }
+                    }
+                }
+                tracks.isEmpty() -> item(key = "playlist-empty") {
+                    Text("歌单中没有可显示的歌曲", Modifier.padding(20.dp))
+                }
+                else -> itemsIndexed(
+                    items = tracks,
+                    key = { index, track -> "${track.source}-${track.id}-$index" }
+                ) { index, track ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onPlayPlaylist(tracks, index) }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    track.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    track.artist.ifBlank { "未知歌手" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(onClick = { moreTrack = track }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "歌曲更多")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    moreTrack?.let { track ->
+        TrackMoreBottomSheet(
+            track = track,
+            onDismiss = { moreTrack = null },
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onFavorite = onFavorite,
+            onSearchArtist = { onSearchArtist(it, track.source) },
+            onSearchAlbum = { onSearchAlbum(it, track.source) }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlaylistSearchMoreSheet(
     playlist: NeteasePlaylist,
+    tracks: List<Track>,
     onDismiss: () -> Unit,
-    onImport: (NeteasePlaylist, (Result<Unit>) -> Unit) -> Unit
+    onImport: (NeteasePlaylist, List<Track>, (Result<Unit>) -> Unit) -> Unit
 ) {
     var importing by remember(playlist.id) { mutableStateOf(false) }
     var message by remember(playlist.id) { mutableStateOf<String?>(null) }
@@ -324,10 +538,10 @@ private fun PlaylistSearchMoreSheet(
                 modifier = Modifier.fillMaxWidth().clickable(enabled = !importing) {
                     importing = true
                     message = null
-                    onImport(playlist) { result ->
+                    onImport(playlist, tracks) { result ->
                         importing = false
                         result.onSuccess {
-                            message = "已加入收藏，共 ${playlist.trackCount} 首歌曲"
+                            message = "已加入收藏，共 ${tracks.size} 首歌曲"
                         }
                         result.onFailure { error ->
                             message = error.message ?: "导入失败"

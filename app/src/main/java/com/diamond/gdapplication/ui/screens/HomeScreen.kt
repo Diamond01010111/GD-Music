@@ -133,7 +133,7 @@ private fun AppDrawer(
             modifier = Modifier.padding(20.dp)
         )
         ListItem(
-            headlineContent = { Text("最近 5 分钟 API 请求") },
+            headlineContent = { Text("最近 5 分钟 GD 音乐台请求") },
             supportingContent = { Text("$requestCount 次") }
         )
         HorizontalDivider()

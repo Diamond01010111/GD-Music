@@ -91,6 +91,7 @@ fun MusicApp(
     ) -> Unit,
     onImportNeteasePlaylist: (
         playlist: NeteasePlaylist,
+        tracks: List<Track>,
         callback: (Result<Unit>) -> Unit
     ) -> Unit,
 
@@ -523,6 +524,7 @@ fun MusicApp(
                         onSearch = ::executeSearch,
                         onLoadMore = ::loadNextSearchPage,
                         onImportPlaylist = onImportNeteasePlaylist,
+                        onPlayPlaylist = onPlayResults,
                         onTrackClick = { index ->
                             onPlayResults(resultTracks, index)
                         },
