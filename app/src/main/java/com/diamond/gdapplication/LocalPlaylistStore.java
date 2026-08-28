@@ -98,6 +98,30 @@ public class LocalPlaylistStore {
         return playlist;
     }
 
+    public LocalPlaylist createPlaylist(String name, List<Track> importedTracks) {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isEmpty() || importedTracks == null) {
+            return null;
+        }
+
+        List<Track> tracks = new ArrayList<>();
+        for (Track track : importedTracks) {
+            if (track != null && isValidTrack(track) && !containsTrack(tracks, track)) {
+                tracks.add(track);
+            }
+        }
+
+        List<LocalPlaylist> playlists = getPlaylists();
+        LocalPlaylist playlist = new LocalPlaylist(
+                UUID.randomUUID().toString(),
+                normalizedName,
+                tracks
+        );
+        playlists.add(playlist);
+        savePlaylists(playlists);
+        return playlist;
+    }
+
     public boolean addTrackToPlaylist(String playlistId, Track track) {
         if (playlistId == null || track == null || !isValidTrack(track)) {
             return false;
@@ -282,7 +306,6 @@ public class LocalPlaylistStore {
                 );
 
                 track.picUrl = object.optString("picUrl", "");
-                track.externalMetadata = object.optBoolean("externalMetadata", false);
                 tracks.add(track);
             } catch (Exception exception) {
                 exception.printStackTrace();
@@ -325,7 +348,6 @@ public class LocalPlaylistStore {
             object.put("picId", track.picId);
             object.put("lyricId", track.lyricId);
             object.put("picUrl", track.picUrl == null ? "" : track.picUrl);
-            object.put("externalMetadata", track.externalMetadata);
             array.put(object);
         }
 

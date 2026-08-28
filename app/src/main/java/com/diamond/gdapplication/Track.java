@@ -15,8 +15,11 @@ public class Track {
     public String lyric;
     public String translatedLyric;
 
+    // Zero means use the persisted default quality. A positive value overrides
+    // quality only for this queue item.
+    public int requestedBitrate = 0;
+
     // External playlists provide metadata rather than a GD search result.
-    // These tracks must be resolved and artist-matched before playback.
     public boolean externalMetadata = false;
 
     public Track(String id, String source, String name, String artist, String album, String picId, String lyricId) {

@@ -636,10 +636,13 @@ public final class AutoPlaybackService extends MediaLibraryService {
             }
         };
 
+        int bitrate = track.requestedBitrate > 0
+                ? track.requestedBitrate
+                : PlaybackPreferences.defaultBitrate(this);
         if (track.externalMetadata) {
-            musicApi.resolveExternalTrack(track, 999, callback);
+            musicApi.resolveExternalTrack(track, bitrate, callback);
         } else {
-            musicApi.getAudioUrl(track, 999, callback);
+            musicApi.getAudioUrl(track, bitrate, callback);
         }
 
         try {

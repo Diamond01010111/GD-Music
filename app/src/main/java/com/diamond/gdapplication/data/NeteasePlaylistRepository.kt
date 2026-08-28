@@ -2,6 +2,7 @@ package com.diamond.gdapplication.data
 
 import android.os.Handler
 import android.os.Looper
+import com.diamond.gdapplication.RequestTracker
 import com.diamond.gdapplication.Track
 import okhttp3.Call
 import okhttp3.Callback
@@ -60,6 +61,50 @@ class NeteasePlaylistRepository {
             result.onSuccess(callback::onSuccess)
                 .onFailure(callback::onError)
         }
+    }
+
+    fun searchPlaylists(
+        keyword: String,
+        page: Int,
+        limit: Int = SEARCH_PAGE_SIZE,
+        callback: (Result<List<NeteasePlaylist>>) -> Unit
+    ) {
+        if (keyword.isBlank()) {
+            callback(Result.failure(IllegalArgumentException("搜索关键词不能为空")))
+            return
+        }
+        val safeLimit = limit.coerceIn(1, 100)
+        val url = PLAYLIST_SEARCH_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("s", keyword.trim())
+            .addQueryParameter("type", "1000")
+            .addQueryParameter("limit", safeLimit.toString())
+            .addQueryParameter("offset", ((page.coerceAtLeast(1) - 1) * safeLimit).toString())
+            .build()
+
+        execute(url.toString()) { root ->
+            val array = root.optJSONObject("result")?.optJSONArray("playlists")
+                ?: return@execute emptyList()
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val id = item.opt("id")?.toString().orEmpty()
+                    if (id.isBlank() || id == "null") continue
+                    add(
+                        NeteasePlaylist(
+                            id = id,
+                            name = item.optString("name", "未命名歌单"),
+                            coverUrl = item.optString("coverImgUrl")
+                                .replace("http://", "https://"),
+                            trackCount = item.optInt("trackCount", 0),
+                            creatorId = item.optJSONObject("creator")
+                                ?.opt("userId")
+                                ?.toString()
+                                .orEmpty()
+                        )
+                    )
+                }
+            }
+        }.onResult(callback)
     }
 
     fun loadPlaylistTracks(
@@ -253,6 +298,7 @@ class NeteasePlaylistRepository {
             .get()
             .build()
 
+        RequestTracker.record()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
                 deliver(callback, Result.failure(e))
@@ -327,6 +373,7 @@ class NeteasePlaylistRepository {
         transform: (JSONObject) -> T
     ): PendingResult<T> {
         return PendingResult { callback ->
+            RequestTracker.record()
             client.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     deliverResult(callback, Result.failure(e))
@@ -430,6 +477,7 @@ class NeteasePlaylistRepository {
 
     private companion object {
         const val USER_PLAYLIST_URL = "https://music.163.com/api/user/playlist/"
+        const val PLAYLIST_SEARCH_URL = "https://music.163.com/api/search/get"
         const val PLAYLIST_DETAIL_URL = "https://music.163.com/api/v6/playlist/detail"
         const val LEGACY_PLAYLIST_DETAIL_URL = "https://music.163.com/api/playlist/detail"
         const val SONG_DETAIL_URL = "https://music.163.com/api/song/detail/"
@@ -437,6 +485,7 @@ class NeteasePlaylistRepository {
         const val PAGE_SIZE = 100
         const val MAX_PLAYLIST_TRACKS = 100000
         const val SONG_DETAIL_BATCH_SIZE = 200
+        const val SEARCH_PAGE_SIZE = 30
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
