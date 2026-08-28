@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.LocalPlaylistStore
@@ -52,6 +53,7 @@ import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.data.NeteasePlaylist
 import com.diamond.gdapplication.model.AppPage
 import com.diamond.gdapplication.model.SearchCategory
+import com.diamond.gdapplication.ui.components.AutoSizeSingleLineText
 import com.diamond.gdapplication.ui.components.MiniPlayer
 import com.diamond.gdapplication.ui.components.QueueBottomSheet
 import com.diamond.gdapplication.ui.screens.FavoriteScreen
@@ -373,11 +375,16 @@ fun MusicApp(
                             icon = {
                                 Icon(
                                     imageVector = Icons.Default.LibraryMusic,
-                                    contentDescription = "网易歌单"
+                                    contentDescription = "网易云歌单"
                                 )
                             },
                             label = {
-                                Text("网易歌单")
+                                AutoSizeSingleLineText(
+                                    text = "网易云歌单",
+                                    minFontSize = 9.sp,
+                                    maxFontSize = 12.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         )
                     }

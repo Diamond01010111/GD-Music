@@ -343,7 +343,7 @@ public class MainUi {
         importUrlInput.setHint("粘贴网易云歌单链接");
 
         importPlaylistButton = new Button(context);
-        importPlaylistButton.setText("导入网易歌单");
+        importPlaylistButton.setText("导入网易云歌单");
 
         TextView tip = new TextView(context);
         tip.setText("这里之后解析网易云歌单链接，获取歌曲名/歌手，再用 GD API 搜索匹配。");
