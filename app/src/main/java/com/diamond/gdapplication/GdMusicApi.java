@@ -43,91 +43,82 @@ public class GdMusicApi {
             int br,
             TrackCallback callback
     ) {
-        if (reference == null
-                || reference.name == null
-                || reference.name.trim().isEmpty()
-                || reference.artist == null
-                || reference.artist.trim().isEmpty()) {
-            callback.onError(new IllegalArgumentException("外部歌曲缺少歌曲名或歌手"));
-            return;
-        }
-
-        List<String> sources = new ArrayList<>();
-        if (reference.source != null && !reference.source.trim().isEmpty()) {
-            sources.add(reference.source);
-        }
-        for (String source : PLAYABLE_SOURCES) {
-            if (!sources.contains(source)) {
-                sources.add(source);
-            }
-        }
-
-        tryResolveFromSource(reference, br, sources, 0, callback);
+        List<String> sources = orderedSources(reference, null);
+        tryResolveAudioSource(reference, br, sources, 0, callback);
     }
 
-    private void tryResolveFromSource(
+    public void resolveTrackFromSource(
+            Track reference,
+            String source,
+            int br,
+            TrackCallback callback
+    ) {
+        if (!validReference(reference) || source == null || source.trim().isEmpty()) {
+            callback.onError(new IllegalArgumentException("歌曲或目标音源无效"));
+            return;
+        }
+        List<String> sources = new ArrayList<>();
+        sources.add(source);
+        tryResolveAudioSource(reference, br, sources, 0, callback);
+    }
+
+    public void resolveLyrics(
+            Track reference,
+            String preferredSource,
+            TrackCallback callback
+    ) {
+        if (!validReference(reference)) {
+            callback.onError(new IllegalArgumentException("歌曲缺少歌曲名或歌手"));
+            return;
+        }
+        tryResolveLyricSource(
+                reference,
+                orderedSources(reference, preferredSource),
+                0,
+                callback
+        );
+    }
+
+    private void tryResolveAudioSource(
             Track reference,
             int br,
             List<String> sources,
             int sourceIndex,
             TrackCallback callback
     ) {
+        if (!validReference(reference)) {
+            callback.onError(new IllegalArgumentException("外部歌曲缺少歌曲名或歌手"));
+            return;
+        }
         if (sourceIndex >= sources.size()) {
-            callback.onError(
-                    new Exception(
-                            "没有找到歌手匹配且可播放的音源："
-                                    + reference.name
-                                    + " - "
-                                    + reference.artist
-                    )
-            );
+            callback.onError(new Exception(
+                    "没有找到歌手匹配且可播放的音源："
+                            + reference.name + " - " + reference.artist
+            ));
             return;
         }
 
         String source = sources.get(sourceIndex);
-        searchTracks(
-                reference.name,
-                source,
-                15,
-                1,
-                new SearchCallback() {
-                    @Override
-                    public void onSuccess(List<Track> tracks) {
-                        List<Track> matches = matchingArtistCandidates(reference, tracks);
-                        if (matches.isEmpty()) {
-                            tryResolveFromSource(
-                                    reference,
-                                    br,
-                                    sources,
-                                    sourceIndex + 1,
-                                    callback
-                            );
-                            return;
-                        }
+        searchTracks(reference.name, source, 15, 1, new SearchCallback() {
+            @Override
+            public void onSuccess(List<Track> tracks) {
+                List<Track> matches = matchingArtistCandidates(reference, tracks);
+                tryPlayableCandidate(
+                        reference,
+                        br,
+                        sources,
+                        sourceIndex,
+                        matches,
+                        0,
+                        callback
+                );
+            }
 
-                        tryPlayableCandidate(
-                                reference,
-                                br,
-                                sources,
-                                sourceIndex,
-                                matches,
-                                0,
-                                callback
-                        );
-                    }
-
-                    @Override
-                    public void onError(Exception e) {
-                        tryResolveFromSource(
-                                reference,
-                                br,
-                                sources,
-                                sourceIndex + 1,
-                                callback
-                        );
-                    }
-                }
-        );
+            @Override
+            public void onError(Exception e) {
+                tryResolveAudioSource(reference, br, sources, sourceIndex + 1, callback);
+            }
+        });
     }
 
     private void tryPlayableCandidate(
@@ -140,13 +131,7 @@ public class GdMusicApi {
             TrackCallback callback
     ) {
         if (candidateIndex >= candidates.size()) {
-            tryResolveFromSource(
-                    reference,
-                    br,
-                    sources,
-                    sourceIndex + 1,
-                    callback
-            );
+            tryResolveAudioSource(reference, br, sources, sourceIndex + 1, callback);
             return;
         }
 
@@ -154,9 +139,7 @@ public class GdMusicApi {
         getAudioUrl(candidate, br, new TrackCallback() {
             @Override
             public void onSuccess(Track resolved) {
-                if (resolved.audioUrl == null
-                        || resolved.audioUrl.isEmpty()
-                        || "null".equals(resolved.audioUrl)) {
+                if (!present(resolved.audioUrl)) {
                     tryPlayableCandidate(
                             reference,
                             br,
@@ -168,10 +151,7 @@ public class GdMusicApi {
                     );
                     return;
                 }
-
-                if ((resolved.picUrl == null || resolved.picUrl.isEmpty())
-                        && reference.picUrl != null
-                        && !reference.picUrl.isEmpty()) {
+                if (!present(resolved.picUrl) && present(reference.picUrl)) {
                     resolved.picUrl = reference.picUrl;
                 }
                 resolved.externalMetadata = false;
@@ -193,30 +173,153 @@ public class GdMusicApi {
         });
     }
 
-    private List<Track> matchingArtistCandidates(
+    private void tryResolveLyricSource(
             Track reference,
-            List<Track> tracks
+            List<String> sources,
+            int sourceIndex,
+            TrackCallback callback
     ) {
+        if (sourceIndex >= sources.size()) {
+            callback.onError(new Exception("所有可用来源均未找到歌词"));
+            return;
+        }
+
+        String source = sources.get(sourceIndex);
+        if (source.equals(reference.source) && present(reference.lyricId)) {
+            Track direct = copyTrack(reference);
+            getLyric(direct, new TrackCallback() {
+                @Override
+                public void onSuccess(Track resolved) {
+                    if (present(resolved.lyric)) {
+                        callback.onSuccess(resolved);
+                    } else {
+                        tryResolveLyricSource(reference, sources, sourceIndex + 1, callback);
+                    }
+                }
+
+                @Override
+                public void onError(Exception e) {
+                    tryResolveLyricSource(reference, sources, sourceIndex + 1, callback);
+                }
+            });
+            return;
+        }
+
+        searchTracks(reference.name, source, 15, 1, new SearchCallback() {
+            @Override
+            public void onSuccess(List<Track> tracks) {
+                tryLyricCandidate(
+                        reference,
+                        sources,
+                        sourceIndex,
+                        matchingArtistCandidates(reference, tracks),
+                        0,
+                        callback
+                );
+            }
+
+            @Override
+            public void onError(Exception e) {
+                tryResolveLyricSource(reference, sources, sourceIndex + 1, callback);
+            }
+        });
+    }
+
+    private void tryLyricCandidate(
+            Track reference,
+            List<String> sources,
+            int sourceIndex,
+            List<Track> candidates,
+            int candidateIndex,
+            TrackCallback callback
+    ) {
+        if (candidateIndex >= candidates.size()) {
+            tryResolveLyricSource(reference, sources, sourceIndex + 1, callback);
+            return;
+        }
+
+        Track candidate = candidates.get(candidateIndex);
+        if (!present(candidate.lyricId)) {
+            tryLyricCandidate(
+                    reference,
+                    sources,
+                    sourceIndex,
+                    candidates,
+                    candidateIndex + 1,
+                    callback
+            );
+            return;
+        }
+        getLyric(candidate, new TrackCallback() {
+            @Override
+            public void onSuccess(Track resolved) {
+                if (present(resolved.lyric)) {
+                    callback.onSuccess(resolved);
+                } else {
+                    tryLyricCandidate(
+                            reference,
+                            sources,
+                            sourceIndex,
+                            candidates,
+                            candidateIndex + 1,
+                            callback
+                    );
+                }
+            }
+
+            @Override
+            public void onError(Exception e) {
+                tryLyricCandidate(
+                        reference,
+                        sources,
+                        sourceIndex,
+                        candidates,
+                        candidateIndex + 1,
+                        callback
+                );
+            }
+        });
+    }
+
+    private List<String> orderedSources(Track reference, String preferredSource) {
+        List<String> sources = new ArrayList<>();
+        addSource(sources, preferredSource);
+        addSource(sources, reference == null ? null : reference.source);
+        for (String source : PLAYABLE_SOURCES) {
+            addSource(sources, source);
+        }
+        return sources;
+    }
+
+    private void addSource(List<String> sources, String source) {
+        if (source != null && !source.trim().isEmpty() && !sources.contains(source)) {
+            sources.add(source);
+        }
+    }
+
+    private boolean validReference(Track reference) {
+        return reference != null
+                && present(reference.name)
+                && present(reference.artist);
+    }
+
+    private List<Track> matchingArtistCandidates(Track reference, List<Track> tracks) {
         List<Track> exactTitleMatches = new ArrayList<>();
         List<Track> otherMatches = new ArrayList<>();
         String referenceTitle = normalizeText(reference.name);
-
         if (tracks == null) {
             return exactTitleMatches;
         }
-
         for (Track candidate : tracks) {
             if (!hasMatchingArtist(reference.artist, candidate.artist)) {
                 continue;
             }
-
             if (referenceTitle.equals(normalizeText(candidate.name))) {
                 exactTitleMatches.add(candidate);
             } else {
                 otherMatches.add(candidate);
             }
         }
-
         exactTitleMatches.addAll(otherMatches);
         return exactTitleMatches;
     }
@@ -224,7 +327,6 @@ public class GdMusicApi {
     static boolean hasMatchingArtist(String first, String second) {
         Set<String> firstArtists = normalizedArtists(first);
         Set<String> secondArtists = normalizedArtists(second);
-
         for (String artist : firstArtists) {
             if (secondArtists.contains(artist)) {
                 return true;
@@ -238,7 +340,6 @@ public class GdMusicApi {
         if (raw == null || raw.trim().isEmpty()) {
             return artists;
         }
-
         String[] parts = raw.split(
                 "(?i)\\s*(?:、|,|，|/|&|\\bfeat\\.?\\b|\\bft\\.?\\b)\\s*"
         );
@@ -255,10 +356,30 @@ public class GdMusicApi {
         if (value == null) {
             return "";
         }
-
         return Normalizer.normalize(value, Normalizer.Form.NFKC)
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^\\p{L}\\p{N}]", "");
+    }
+
+    private Track copyTrack(Track source) {
+        Track copy = new Track(
+                source.id,
+                source.source,
+                source.name,
+                source.artist,
+                source.album,
+                source.picId,
+                source.lyricId
+        );
+        copy.audioUrl = source.audioUrl;
+        copy.audioUrlCachedAt = source.audioUrlCachedAt;
+        copy.picUrl = source.picUrl;
+        copy.externalMetadata = source.externalMetadata;
+        return copy;
+    }
+
+    private boolean present(String value) {
+        return value != null && !value.isEmpty() && !"null".equals(value);
     }
 
     public void searchTracks(String keywordRaw, SearchCallback callback) {
