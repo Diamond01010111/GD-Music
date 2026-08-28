@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">GD Application</string>
+    <string name="app_name">GD Music</string>
     <string name="playback_channel_name">音乐播放</string>
     <string name="playback_channel_description">显示当前歌曲与播放控制</string>
     <string name="auto_favorites">收藏</string>
