@@ -1,6 +1,9 @@
 package com.diamond.gdapplication;
 
+import android.app.PendingIntent;
+import android.content.Intent;
 import android.net.Uri;
+import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -49,6 +52,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @UnstableApi
 public final class AutoPlaybackService extends MediaLibraryService {
 
+    private static final String SESSION_LOG_TAG = "GDMediaSession";
     private static final String ROOT_ID = "root";
     private static final String FAVORITES_ID = "favorites";
     private static final String NETEASE_ID = "netease_playlists";
@@ -95,12 +99,25 @@ public final class AutoPlaybackService extends MediaLibraryService {
                         .build(),
                 true
         );
+        player.setHandleAudioBecomingNoisy(true);
         player.setRepeatMode(Player.REPEAT_MODE_ALL);
+
+        Intent sessionActivityIntent = new Intent(this, ComposeMainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent sessionActivity = PendingIntent.getActivity(
+                this,
+                0,
+                sessionActivityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
         mediaLibrarySession = new MediaLibrarySession.Builder(
                 this,
                 player,
                 new AutoLibraryCallback()
-        ).setId("shared_playback").build();
+        )
+                .setId("shared_playback")
+                .setSessionActivity(sessionActivity)
+                .build();
     }
 
     @Nullable
@@ -117,6 +134,36 @@ public final class AutoPlaybackService extends MediaLibraryService {
     }
 
     private final class AutoLibraryCallback implements MediaLibrarySession.Callback {
+
+        @Override
+        public MediaSession.ConnectionResult onConnect(
+                MediaSession session,
+                MediaSession.ControllerInfo controller
+        ) {
+            Log.i(
+                    SESSION_LOG_TAG,
+                    "Controller connected: package="
+                            + controller.getPackageName()
+                            + ", uid="
+                            + controller.getUid()
+            );
+            return MediaLibrarySession.Callback.super.onConnect(session, controller);
+        }
+
+        @Override
+        public void onDisconnected(
+                MediaSession session,
+                MediaSession.ControllerInfo controller
+        ) {
+            Log.i(
+                    SESSION_LOG_TAG,
+                    "Controller disconnected: package="
+                            + controller.getPackageName()
+                            + ", uid="
+                            + controller.getUid()
+            );
+            MediaLibrarySession.Callback.super.onDisconnected(session, controller);
+        }
 
         @Override
         public ListenableFuture<LibraryResult<MediaItem>> onGetLibraryRoot(
