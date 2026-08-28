@@ -10,6 +10,7 @@ import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
+import androidx.media3.session.SessionError;
 
 import com.diamond.gdapplication.data.NeteasePlaylist;
 import com.diamond.gdapplication.data.NeteasePlaylistCache;
@@ -126,7 +127,9 @@ public final class AutoPlaybackService extends MediaLibraryService {
         ) {
             MediaItem item = itemFor(mediaId);
             if (item == null) {
-                return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE));
+                return Futures.immediateFuture(
+                        LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+                );
             }
             return Futures.immediateFuture(LibraryResult.ofItem(item, null));
         }
