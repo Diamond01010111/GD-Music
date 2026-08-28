@@ -1,5 +1,7 @@
 package com.diamond.gdapplication.ui.components
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -25,15 +27,29 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.MusicController
 import com.diamond.gdapplication.Track
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 @Composable
@@ -52,6 +68,35 @@ fun MiniPlayer(
     onSwipePrevious: () -> Unit,
     onSwipeNext: () -> Unit
 ) {
+    val animationScope = rememberCoroutineScope()
+    val latestTrackId by rememberUpdatedState(track?.id)
+    var contentOffset by remember { mutableFloatStateOf(0f) }
+    var contentWidth by remember { mutableIntStateOf(1) }
+    var isSwipeAnimating by remember { mutableStateOf(false) }
+    var pendingTrackId by remember { mutableStateOf<String?>(null) }
+    var exitDirection by remember { mutableIntStateOf(0) }
+
+    suspend fun animateContentTo(target: Float) {
+        animate(
+            initialValue = contentOffset,
+            targetValue = target,
+            animationSpec = tween(durationMillis = SWIPE_ANIMATION_DURATION_MS)
+        ) { value, _ ->
+            contentOffset = value
+        }
+    }
+
+    LaunchedEffect(track?.id) {
+        val previousId = pendingTrackId ?: return@LaunchedEffect
+        if (track?.id == previousId) return@LaunchedEffect
+
+        // 旧歌曲完全滑出后才切歌；新封面与文字从另一侧滑入。
+        contentOffset = -exitDirection * contentWidth.toFloat()
+        pendingTrackId = null
+        animateContentTo(0f)
+        isSwipeAnimating = false
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -74,48 +119,92 @@ fun MiniPlayer(
                     ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AlbumArtwork(
-                    artworkUrl = artworkUrl,
-                    songName = track?.name
-                )
-
-                Column(
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 10.dp)
-                        .pointerInput(track?.id) {
+                        .clipToBounds()
+                        .onSizeChanged { contentWidth = it.width.coerceAtLeast(1) }
+                        .pointerInput(track?.id, isSwipeAnimating) {
                             val swipeThreshold = 48.dp.toPx()
-                            var totalDrag = 0f
                             detectHorizontalDragGestures(
-                                onDragStart = { totalDrag = 0f },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    totalDrag += dragAmount
+                                onDragStart = {
+                                    if (!isSwipeAnimating) contentOffset = 0f
                                 },
-                                onDragCancel = { totalDrag = 0f },
-                                onDragEnd = {
-                                    if (track != null && abs(totalDrag) >= swipeThreshold) {
-                                        if (totalDrag < 0f) {
-                                            onSwipeNext()
-                                        } else {
-                                            onSwipePrevious()
-                                        }
+                                onHorizontalDrag = { _, dragAmount ->
+                                    if (!isSwipeAnimating) {
+                                        contentOffset = (contentOffset + dragAmount)
+                                            .coerceIn(
+                                                -contentWidth.toFloat(),
+                                                contentWidth.toFloat()
+                                            )
                                     }
-                                    totalDrag = 0f
+                                },
+                                onDragCancel = {
+                                    if (!isSwipeAnimating) {
+                                        animationScope.launch { animateContentTo(0f) }
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (
+                                        track != null &&
+                                        !isSwipeAnimating &&
+                                        abs(contentOffset) >= swipeThreshold
+                                    ) {
+                                        val direction = if (contentOffset < 0f) -1 else 1
+                                        animationScope.launch {
+                                            isSwipeAnimating = true
+                                            animateContentTo(
+                                                direction * contentWidth.toFloat()
+                                            )
+
+                                            val previousId = latestTrackId
+                                            pendingTrackId = previousId
+                                            exitDirection = direction
+                                            if (direction < 0) onSwipeNext() else onSwipePrevious()
+
+                                            // 队列只有一首或无法切换时，将旧内容滑回原位。
+                                            delay(SWIPE_TRACK_CHANGE_TIMEOUT_MS)
+                                            if (
+                                                pendingTrackId == previousId &&
+                                                latestTrackId == previousId
+                                            ) {
+                                                pendingTrackId = null
+                                                animateContentTo(0f)
+                                                isSwipeAnimating = false
+                                            }
+                                        }
+                                    } else if (!isSwipeAnimating) {
+                                        animationScope.launch { animateContentTo(0f) }
+                                    }
                                 }
                             )
                         }
                 ) {
-                    Text(
-                        text = track?.name ?: "暂未播放",
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1
-                    )
+                    Row(
+                        modifier = Modifier.graphicsLayer {
+                            translationX = contentOffset
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AlbumArtwork(
+                            artworkUrl = artworkUrl,
+                            songName = track?.name
+                        )
 
-                    Text(
-                        text = track?.artist ?: "请选择一首歌曲",
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
-                    )
+                        Column(modifier = Modifier.padding(horizontal = 10.dp)) {
+                            Text(
+                                text = track?.name ?: "暂未播放",
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1
+                            )
+
+                            Text(
+                                text = track?.artist ?: "请选择一首歌曲",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
 
                 // 三种模式分别使用不同图标
@@ -189,6 +278,9 @@ fun MiniPlayer(
         }
     }
 }
+
+private const val SWIPE_ANIMATION_DURATION_MS = 180
+private const val SWIPE_TRACK_CHANGE_TIMEOUT_MS = 700L
 
 @Composable
 private fun AlbumArtwork(

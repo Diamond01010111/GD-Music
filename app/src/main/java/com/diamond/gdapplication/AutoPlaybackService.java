@@ -11,13 +11,19 @@ import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
 
+import com.diamond.gdapplication.data.NeteasePlaylist;
+import com.diamond.gdapplication.data.NeteasePlaylistCache;
+import com.diamond.gdapplication.data.NeteasePlaylistRepository;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Media browser and playback endpoint used by Android Auto.
@@ -31,6 +37,10 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private static final String ROOT_ID = "root";
     private static final String FAVORITES_ID = "favorites";
     private static final String NETEASE_ID = "netease_playlists";
+    private static final String NETEASE_CREATED_ID = "netease_created";
+    private static final String NETEASE_SUBSCRIBED_ID = "netease_subscribed";
+    private static final String NETEASE_PLAYLIST_PREFIX = "netease_playlist:";
+    private static final String NETEASE_TRACK_PREFIX = "netease_track:";
     private static final String PLAYLIST_PREFIX = "playlist:";
     private static final String TRACK_PREFIX = "track:";
 
@@ -38,12 +48,18 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private MediaLibrarySession mediaLibrarySession;
     private LocalPlaylistStore playlistStore;
     private GdMusicApi musicApi;
+    private NeteasePlaylistRepository neteaseRepository;
+    private final Map<String, NeteasePlaylist> neteasePlaylists = new LinkedHashMap<>();
+    private final Map<String, List<Track>> neteaseTracks = new LinkedHashMap<>();
 
     @Override
     public void onCreate() {
         super.onCreate();
         playlistStore = new LocalPlaylistStore(getApplicationContext());
         musicApi = new GdMusicApi();
+        neteaseRepository = new NeteasePlaylistRepository();
+        String neteaseUserId = NeteasePlaylistCache.savedUserId(this);
+        rememberNeteasePlaylists(NeteasePlaylistCache.read(this, neteaseUserId));
         player = new ExoPlayer.Builder(this).build();
         mediaLibrarySession = new MediaLibrarySession.Builder(
                 this,
@@ -90,13 +106,16 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 int pageSize,
                 @Nullable LibraryParams params
         ) {
-            List<MediaItem> children = childrenFor(parentId);
-            int fromIndex = Math.min(page * pageSize, children.size());
-            int toIndex = Math.min(fromIndex + pageSize, children.size());
+            if (NETEASE_CREATED_ID.equals(parentId)
+                    || NETEASE_SUBSCRIBED_ID.equals(parentId)) {
+                return loadNeteasePlaylistChildren(parentId, page, pageSize, params);
+            }
+            if (parentId.startsWith(NETEASE_PLAYLIST_PREFIX)) {
+                return loadNeteaseTrackChildren(parentId, page, pageSize, params);
+            }
 
-            return Futures.immediateFuture(
-                    LibraryResult.ofItemList(children.subList(fromIndex, toIndex), params)
-            );
+            List<MediaItem> children = childrenFor(parentId);
+            return immediatePagedResult(children, page, pageSize, params);
         }
 
         @Override
@@ -160,14 +179,21 @@ public final class AutoPlaybackService extends MediaLibraryService {
         }
 
         if (NETEASE_ID.equals(parentId)) {
-            items.add(new MediaItem.Builder()
-                    .setMediaId("netease_import_hint")
-                    .setMediaMetadata(new MediaMetadata.Builder()
-                            .setTitle(getString(R.string.auto_import_on_phone))
-                            .setIsBrowsable(false)
-                            .setIsPlayable(false)
-                            .build())
-                    .build());
+            if (NeteasePlaylistCache.savedUserId(this).isEmpty()) {
+                items.add(messageItem(
+                        "netease_user_hint",
+                        getString(R.string.auto_netease_user_hint)
+                ));
+            } else {
+                items.add(browsableItem(
+                        NETEASE_CREATED_ID,
+                        getString(R.string.auto_netease_created)
+                ));
+                items.add(browsableItem(
+                        NETEASE_SUBSCRIBED_ID,
+                        getString(R.string.auto_netease_subscribed)
+                ));
+            }
             return items;
         }
 
@@ -178,7 +204,11 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 return items;
             }
             for (int index = 0; index < playlist.tracks.size(); index++) {
-                items.add(trackItem(playlistId, index, playlist.tracks.get(index), false));
+                items.add(trackItem(
+                        localTrackId(playlistId, index),
+                        playlist.tracks.get(index),
+                        false
+                ));
             }
         }
 
@@ -196,6 +226,21 @@ public final class AutoPlaybackService extends MediaLibraryService {
         if (NETEASE_ID.equals(mediaId)) {
             return browsableItem(NETEASE_ID, getString(R.string.auto_netease_playlists));
         }
+        if (NETEASE_CREATED_ID.equals(mediaId)) {
+            return browsableItem(NETEASE_CREATED_ID, getString(R.string.auto_netease_created));
+        }
+        if (NETEASE_SUBSCRIBED_ID.equals(mediaId)) {
+            return browsableItem(
+                    NETEASE_SUBSCRIBED_ID,
+                    getString(R.string.auto_netease_subscribed)
+            );
+        }
+        if (mediaId.startsWith(NETEASE_PLAYLIST_PREFIX)) {
+            NeteasePlaylist playlist = neteasePlaylists.get(
+                    mediaId.substring(NETEASE_PLAYLIST_PREFIX.length())
+            );
+            return playlist == null ? null : neteasePlaylistItem(playlist);
+        }
         if (mediaId.startsWith(PLAYLIST_PREFIX)) {
             LocalPlaylistStore.LocalPlaylist playlist = findPlaylist(
                     mediaId.substring(PLAYLIST_PREFIX.length())
@@ -205,7 +250,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
         TrackLocation location = findTrack(mediaId);
         return location == null
                 ? null
-                : trackItem(location.playlistId, location.index, location.track, false);
+                : trackItem(location.mediaId, location.track, false);
     }
 
     private MediaItem browsableItem(String mediaId, String title) {
@@ -220,7 +265,224 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 .build();
     }
 
-    private MediaItem trackItem(String playlistId, int index, Track track, boolean includeUri) {
+    private ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>
+    loadNeteasePlaylistChildren(
+            String sectionId,
+            int page,
+            int pageSize,
+            @Nullable LibraryParams params
+    ) {
+        String userId = NeteasePlaylistCache.savedUserId(this);
+        if (userId.isEmpty()) {
+            return immediatePagedResult(
+                    Collections.singletonList(messageItem(
+                            "netease_user_hint",
+                            getString(R.string.auto_netease_user_hint)
+                    )),
+                    page,
+                    pageSize,
+                    params
+            );
+        }
+
+        // 手机端手动刷新后，车机下次打开板块即可读取最新缓存。
+        rememberNeteasePlaylists(NeteasePlaylistCache.read(this, userId));
+
+        if (!neteasePlaylists.isEmpty() && !NeteasePlaylistCache.shouldRefresh(this)) {
+            return immediatePagedResult(
+                    neteasePlaylistItems(sectionId, userId),
+                    page,
+                    pageSize,
+                    params
+            );
+        }
+
+        SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future =
+                SettableFuture.create();
+        NeteasePlaylistCache.markRefreshAttempt(this);
+        neteaseRepository.loadPublicPlaylistsForJava(
+                userId,
+                new NeteasePlaylistRepository.PlaylistsCallback() {
+                    @Override
+                    public void onSuccess(List<NeteasePlaylist> playlists) {
+                        rememberNeteasePlaylists(playlists);
+                        NeteasePlaylistCache.save(
+                                AutoPlaybackService.this,
+                                userId,
+                                playlists
+                        );
+                        future.set(pagedResult(
+                                neteasePlaylistItems(sectionId, userId),
+                                page,
+                                pageSize,
+                                params
+                        ));
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        if (!neteasePlaylists.isEmpty()) {
+                            future.set(pagedResult(
+                                    neteasePlaylistItems(sectionId, userId),
+                                    page,
+                                    pageSize,
+                                    params
+                            ));
+                            return;
+                        }
+                        future.set(pagedResult(
+                                Collections.singletonList(messageItem(
+                                        "netease_load_error",
+                                        getString(R.string.auto_netease_load_error)
+                                )),
+                                page,
+                                pageSize,
+                                params
+                        ));
+                    }
+                }
+        );
+        return future;
+    }
+
+    private ListenableFuture<LibraryResult<ImmutableList<MediaItem>>>
+    loadNeteaseTrackChildren(
+            String parentId,
+            int page,
+            int pageSize,
+            @Nullable LibraryParams params
+    ) {
+        String playlistId = parentId.substring(NETEASE_PLAYLIST_PREFIX.length());
+        List<Track> cachedTracks = neteaseTracks.get(playlistId);
+        if (cachedTracks != null) {
+            return immediatePagedResult(
+                    neteaseTrackItems(playlistId, cachedTracks),
+                    page,
+                    pageSize,
+                    params
+            );
+        }
+
+        SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future =
+                SettableFuture.create();
+        neteaseRepository.loadPlaylistTracksForJava(
+                playlistId,
+                new NeteasePlaylistRepository.TracksCallback() {
+                    @Override
+                    public void onSuccess(List<Track> tracks) {
+                        neteaseTracks.put(playlistId, tracks);
+                        future.set(pagedResult(
+                                neteaseTrackItems(playlistId, tracks),
+                                page,
+                                pageSize,
+                                params
+                        ));
+                    }
+
+                    @Override
+                    public void onError(Throwable error) {
+                        future.set(pagedResult(
+                                Collections.singletonList(messageItem(
+                                        "netease_tracks_error:" + playlistId,
+                                        getString(R.string.auto_netease_tracks_error)
+                                )),
+                                page,
+                                pageSize,
+                                params
+                        ));
+                    }
+                }
+        );
+        return future;
+    }
+
+    private List<MediaItem> neteasePlaylistItems(String sectionId, String userId) {
+        boolean created = NETEASE_CREATED_ID.equals(sectionId);
+        List<MediaItem> items = new ArrayList<>();
+        for (NeteasePlaylist playlist : neteasePlaylists.values()) {
+            if (playlist.isCreatedBy(userId) == created) {
+                items.add(neteasePlaylistItem(playlist));
+            }
+        }
+        return items;
+    }
+
+    private MediaItem neteasePlaylistItem(NeteasePlaylist playlist) {
+        MediaMetadata.Builder metadata = new MediaMetadata.Builder()
+                .setTitle(playlist.getName())
+                .setSubtitle(playlist.getTrackCount() + " 首歌曲")
+                .setIsBrowsable(true)
+                .setIsPlayable(false)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST);
+        if (isPresent(playlist.getCoverUrl())) {
+            metadata.setArtworkUri(Uri.parse(playlist.getCoverUrl()));
+        }
+        return new MediaItem.Builder()
+                .setMediaId(NETEASE_PLAYLIST_PREFIX + playlist.getId())
+                .setMediaMetadata(metadata.build())
+                .build();
+    }
+
+    private List<MediaItem> neteaseTrackItems(String playlistId, List<Track> tracks) {
+        List<MediaItem> items = new ArrayList<>();
+        for (int index = 0; index < tracks.size(); index++) {
+            items.add(trackItem(
+                    neteaseTrackId(playlistId, index),
+                    tracks.get(index),
+                    false
+            ));
+        }
+        return items;
+    }
+
+    private MediaItem messageItem(String mediaId, String title) {
+        return new MediaItem.Builder()
+                .setMediaId(mediaId)
+                .setMediaMetadata(new MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setIsBrowsable(false)
+                        .setIsPlayable(false)
+                        .build())
+                .build();
+    }
+
+    private void rememberNeteasePlaylists(List<NeteasePlaylist> playlists) {
+        neteasePlaylists.clear();
+        for (NeteasePlaylist playlist : playlists) {
+            neteasePlaylists.put(playlist.getId(), playlist);
+        }
+    }
+
+    private ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> immediatePagedResult(
+            List<MediaItem> items,
+            int page,
+            int pageSize,
+            @Nullable LibraryParams params
+    ) {
+        return Futures.immediateFuture(pagedResult(items, page, pageSize, params));
+    }
+
+    private LibraryResult<ImmutableList<MediaItem>> pagedResult(
+            List<MediaItem> items,
+            int page,
+            int pageSize,
+            @Nullable LibraryParams params
+    ) {
+        int safePageSize = Math.max(pageSize, 1);
+        int fromIndex = Math.min(Math.max(page, 0) * safePageSize, items.size());
+        int toIndex = Math.min(fromIndex + safePageSize, items.size());
+        return LibraryResult.ofItemList(items.subList(fromIndex, toIndex), params);
+    }
+
+    private String localTrackId(String playlistId, int index) {
+        return TRACK_PREFIX + playlistId + ":" + index;
+    }
+
+    private String neteaseTrackId(String playlistId, int index) {
+        return NETEASE_TRACK_PREFIX + playlistId + ":" + index;
+    }
+
+    private MediaItem trackItem(String mediaId, Track track, boolean includeUri) {
         MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                 .setTitle(track.name)
                 .setArtist(track.artist)
@@ -234,7 +496,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
         }
 
         MediaItem.Builder item = new MediaItem.Builder()
-                .setMediaId(TRACK_PREFIX + playlistId + ":" + index)
+                .setMediaId(mediaId)
                 .setMediaMetadata(metadata.build());
         if (includeUri && isPresent(track.audioUrl)) {
             item.setUri(track.audioUrl);
@@ -260,7 +522,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
         }
 
         if (isPresent(location.track.audioUrl)) {
-            resolved.add(trackItem(location.playlistId, location.index, location.track, true));
+            resolved.add(trackItem(location.mediaId, location.track, true));
             resolvePlayableItems(requested, index + 1, resolved, future);
             return;
         }
@@ -269,7 +531,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
             @Override
             public void onSuccess(Track track) {
                 if (isPresent(track.audioUrl)) {
-                    resolved.add(trackItem(location.playlistId, location.index, track, true));
+                    resolved.add(trackItem(location.mediaId, track, true));
                 }
                 resolvePlayableItems(requested, index + 1, resolved, future);
             }
@@ -299,11 +561,19 @@ public final class AutoPlaybackService extends MediaLibraryService {
 
     @Nullable
     private TrackLocation findTrack(String mediaId) {
-        if (mediaId == null || !mediaId.startsWith(TRACK_PREFIX)) {
+        if (mediaId == null) {
             return null;
         }
 
-        String value = mediaId.substring(TRACK_PREFIX.length());
+        boolean netease = mediaId.startsWith(NETEASE_TRACK_PREFIX);
+        String value;
+        if (netease) {
+            value = mediaId.substring(NETEASE_TRACK_PREFIX.length());
+        } else if (mediaId.startsWith(TRACK_PREFIX)) {
+            value = mediaId.substring(TRACK_PREFIX.length());
+        } else {
+            return null;
+        }
         int separator = value.lastIndexOf(':');
         if (separator <= 0) {
             return null;
@@ -312,11 +582,18 @@ public final class AutoPlaybackService extends MediaLibraryService {
         try {
             String playlistId = value.substring(0, separator);
             int index = Integer.parseInt(value.substring(separator + 1));
+            if (netease) {
+                List<Track> tracks = neteaseTracks.get(playlistId);
+                if (tracks == null || index < 0 || index >= tracks.size()) {
+                    return null;
+                }
+                return new TrackLocation(mediaId, tracks.get(index));
+            }
             LocalPlaylistStore.LocalPlaylist playlist = findPlaylist(playlistId);
             if (playlist == null || index < 0 || index >= playlist.tracks.size()) {
                 return null;
             }
-            return new TrackLocation(playlistId, index, playlist.tracks.get(index));
+            return new TrackLocation(mediaId, playlist.tracks.get(index));
         } catch (NumberFormatException ignored) {
             return null;
         }
@@ -327,13 +604,11 @@ public final class AutoPlaybackService extends MediaLibraryService {
     }
 
     private static final class TrackLocation {
-        final String playlistId;
-        final int index;
+        final String mediaId;
         final Track track;
 
-        TrackLocation(String playlistId, int index, Track track) {
-            this.playlistId = playlistId;
-            this.index = index;
+        TrackLocation(String mediaId, Track track) {
+            this.mediaId = mediaId;
             this.track = track;
         }
     }
