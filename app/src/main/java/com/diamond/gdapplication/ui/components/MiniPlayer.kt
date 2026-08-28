@@ -3,6 +3,7 @@ package com.diamond.gdapplication.ui.components
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ fun MiniPlayer(
     onPlayPause: () -> Unit,
     onSwitchPlayMode: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenDetails: () -> Unit,
     onSwipePrevious: () -> Unit,
     onSwipeNext: () -> Unit
 ) {
@@ -124,6 +126,10 @@ fun MiniPlayer(
                         .weight(1f)
                         .clipToBounds()
                         .onSizeChanged { contentWidth = it.width.coerceAtLeast(1) }
+                        .clickable(
+                            enabled = track != null && !isSwipeAnimating,
+                            onClick = onOpenDetails
+                        )
                         .pointerInput(track?.id, isSwipeAnimating) {
                             val swipeThreshold = 48.dp.toPx()
                             detectHorizontalDragGestures(
