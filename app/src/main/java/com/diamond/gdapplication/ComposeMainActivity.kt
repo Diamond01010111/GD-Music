@@ -206,8 +206,8 @@ class ComposeMainActivity : ComponentActivity() {
                     onChangeCurrentQuality = ::changeCurrentQuality,
 
                     onRequestNeteasePlaylists = ::requestNeteasePlaylists,
-                    onImportNeteasePlaylist = { playlist, callback ->
-                        importNeteasePlaylist(playlist) { result ->
+                    onImportNeteasePlaylist = { playlist, tracks, callback ->
+                        importNeteasePlaylist(playlist, tracks) { result ->
                             if (result.isSuccess) {
                                 localPlaylists = localPlaylistStore.playlists
                             }
@@ -646,18 +646,14 @@ class ComposeMainActivity : ComponentActivity() {
 
     private fun importNeteasePlaylist(
         playlist: NeteasePlaylist,
+        tracks: List<Track>,
         callback: (Result<Unit>) -> Unit
     ) {
-        neteaseRepository.loadPlaylistTracks(playlist.id) { result ->
-            result.onSuccess { tracks ->
-                val imported = localPlaylistStore.createPlaylist(playlist.name, tracks)
-                if (imported == null) {
-                    callback(Result.failure(IllegalStateException("创建收藏失败")))
-                } else {
-                    callback(Result.success(Unit))
-                }
-            }
-            result.onFailure { callback(Result.failure(it)) }
+        val imported = localPlaylistStore.createPlaylist(playlist.name, tracks)
+        if (imported == null) {
+            callback(Result.failure(IllegalStateException("创建收藏失败")))
+        } else {
+            callback(Result.success(Unit))
         }
     }
 
