@@ -10,9 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.AudioQuality
 import com.diamond.gdapplication.RequestTracker
+import com.diamond.gdapplication.ui.components.AutoSizeSingleLineText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -82,9 +84,14 @@ private fun HomeContent(
             ) {
                 Row(Modifier.fillMaxWidth().padding(16.dp)) {
                     Icon(Icons.Default.Search, contentDescription = null)
-                    Text(
-                        "搜索歌曲、歌手、专辑或歌单",
-                        modifier = Modifier.weight(1f).padding(start = 12.dp)
+                    AutoSizeSingleLineText(
+                        text = "搜索歌曲、歌手、专辑或网易云歌单",
+                        style = MaterialTheme.typography.bodyLarge,
+                        minFontSize = 11.sp,
+                        maxFontSize = 16.sp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp)
                     )
                 }
             }

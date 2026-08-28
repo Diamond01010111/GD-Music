@@ -117,7 +117,7 @@ fun NeteasePlaylistScreen(
                 playlists = loaded
                 NeteasePlaylistCache.save(context, savedUserId, loaded)
             }.onFailure { error ->
-                errorMessage = error.message ?: "刷新网易歌单失败"
+                errorMessage = error.message ?: "刷新网易云歌单失败"
             }
         }
     }
@@ -207,7 +207,7 @@ fun NeteasePlaylistScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "网易歌单",
+            text = "网易云歌单",
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
         )
@@ -326,7 +326,7 @@ private fun PlaylistDetail(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回网易歌单")
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回网易云歌单")
             }
             Spacer(Modifier.weight(1f))
         }
@@ -472,7 +472,7 @@ private fun UserIdInput(
             .padding(20.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("网易歌单", style = MaterialTheme.typography.headlineSmall)
+        Text("网易云歌单", style = MaterialTheme.typography.headlineSmall)
         Text(
             text = "输入网易云用户 ID，加载该用户公开创建和收藏的歌单。",
             style = MaterialTheme.typography.bodyMedium,

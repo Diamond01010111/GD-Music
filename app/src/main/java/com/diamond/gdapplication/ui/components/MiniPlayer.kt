@@ -3,6 +3,7 @@ package com.diamond.gdapplication.ui.components
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
@@ -197,17 +198,33 @@ fun MiniPlayer(
                             songName = track?.name
                         )
 
-                        Column(modifier = Modifier.padding(horizontal = 10.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 10.dp)
+                        ) {
                             Text(
                                 text = track?.name ?: "暂未播放",
                                 style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.basicMarquee(
+                                    iterations = Int.MAX_VALUE,
+                                    initialDelayMillis = MARQUEE_INITIAL_DELAY_MS,
+                                    repeatDelayMillis = MARQUEE_REPEAT_DELAY_MS
+                                )
                             )
 
                             Text(
                                 text = track?.artist ?: "请选择一首歌曲",
                                 style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.basicMarquee(
+                                    iterations = Int.MAX_VALUE,
+                                    initialDelayMillis = MARQUEE_INITIAL_DELAY_MS,
+                                    repeatDelayMillis = MARQUEE_REPEAT_DELAY_MS
+                                )
                             )
                         }
                     }
@@ -215,7 +232,8 @@ fun MiniPlayer(
 
                 // 三种模式分别使用不同图标
                 IconButton(
-                    onClick = onSwitchPlayMode
+                    onClick = onSwitchPlayMode,
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = when (playMode) {
@@ -243,7 +261,8 @@ fun MiniPlayer(
 
                 IconButton(
                     enabled = track != null,
-                    onClick = onPlayPause
+                    onClick = onPlayPause,
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = if (isPlaying) {
@@ -260,7 +279,8 @@ fun MiniPlayer(
                 }
 
                 IconButton(
-                    onClick = onOpenQueue
+                    onClick = onOpenQueue,
+                    modifier = Modifier.size(44.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.QueueMusic,
@@ -287,6 +307,8 @@ fun MiniPlayer(
 
 private const val SWIPE_ANIMATION_DURATION_MS = 180
 private const val SWIPE_TRACK_CHANGE_TIMEOUT_MS = 700L
+private const val MARQUEE_INITIAL_DELAY_MS = 1_200
+private const val MARQUEE_REPEAT_DELAY_MS = 900
 
 @Composable
 private fun AlbumArtwork(

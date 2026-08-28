@@ -19,7 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.model.supportedMusicSources
 
@@ -58,7 +60,15 @@ fun SearchControls(
             value = keyword,
             onValueChange = onKeywordChange,
             enabled = !isSearching,
-            placeholder = { Text("搜索歌曲、歌手或专辑") },
+            placeholder = {
+                Text(
+                    when (category) {
+                        SearchCategory.SONG -> "搜索歌曲或歌手"
+                        SearchCategory.ALBUM -> "搜索专辑"
+                        SearchCategory.NETEASE_PLAYLIST -> "搜索网易云歌单"
+                    }
+                )
+            },
             singleLine = true,
             trailingIcon = {
                 IconButton(
@@ -99,7 +109,7 @@ fun SearchControls(
                     .padding(horizontal = 4.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
+                AutoSizeSingleLineText(
                     text = item.label,
                     color = if (selected) {
                         MaterialTheme.colorScheme.onPrimaryContainer
@@ -107,7 +117,10 @@ fun SearchControls(
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1
+                    minFontSize = 10.sp,
+                    maxFontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
