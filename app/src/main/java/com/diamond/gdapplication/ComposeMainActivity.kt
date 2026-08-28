@@ -26,6 +26,7 @@ import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.MusicApp
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 
 @UnstableApi
 class ComposeMainActivity : ComponentActivity() {
@@ -35,6 +36,7 @@ class ComposeMainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController by mutableStateOf<MediaController?>(null)
     private var lastRootBackAt = 0L
+    private val lyricCache = ConcurrentHashMap<String, Track>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -184,6 +186,7 @@ class ComposeMainActivity : ComponentActivity() {
                     },
 
                     onRequestLyrics = ::requestLyrics,
+                    onSwitchCurrentSource = ::switchCurrentSource,
 
                     onPlayResults = ::playTracks,
 
@@ -505,12 +508,22 @@ class ComposeMainActivity : ComponentActivity() {
 
     private fun requestLyrics(
         track: Track,
+        preferredSource: String?,
         callback: (Result<Track>) -> Unit
     ) {
-        api.getLyric(
+        val cacheKey = lyricCacheKey(track, preferredSource)
+        lyricCache[cacheKey]?.let { cached ->
+            callback(Result.success(cached))
+            return
+        }
+
+        api.resolveLyrics(
             track,
+            preferredSource,
             object : GdMusicApi.TrackCallback {
                 override fun onSuccess(updatedTrack: Track) {
+                    lyricCache[cacheKey] = updatedTrack
+                    lyricCache[lyricCacheKey(track, updatedTrack.source)] = updatedTrack
                     runOnUiThread { callback(Result.success(updatedTrack)) }
                 }
 
@@ -520,6 +533,54 @@ class ComposeMainActivity : ComponentActivity() {
             }
         )
     }
+
+    private fun switchCurrentSource(
+        reference: Track,
+        source: String,
+        callback: (Result<Unit>) -> Unit
+    ) {
+        api.resolveTrackFromSource(
+            reference,
+            source,
+            999,
+            object : GdMusicApi.TrackCallback {
+                override fun onSuccess(resolvedTrack: Track) {
+                    runOnUiThread {
+                        val controller = mediaController
+                        if (controller == null || controller.mediaItemCount == 0) {
+                            callback(Result.failure(IllegalStateException("播放器未连接")))
+                            return@runOnUiThread
+                        }
+
+                        val index = controller.currentMediaItemIndex
+                        val position = controller.currentPosition.coerceAtLeast(0L)
+                        val shouldResume = controller.playWhenReady
+                        val mediaId = controller.currentMediaItem?.mediaId
+                            ?: "source:${SystemClock.elapsedRealtime()}:${resolvedTrack.id}"
+                        controller.replaceMediaItem(
+                            index,
+                            TrackMediaItem.create(mediaId, resolvedTrack)
+                        )
+                        controller.seekTo(index, position)
+                        controller.prepare()
+                        if (shouldResume) controller.play()
+                        callback(Result.success(Unit))
+                    }
+                }
+
+                override fun onError(e: Exception) {
+                    runOnUiThread { callback(Result.failure(e)) }
+                }
+            }
+        )
+    }
+
+    private fun lyricCacheKey(track: Track, preferredSource: String?): String =
+        listOf(
+            track.name.trim().lowercase(),
+            track.artist.trim().lowercase(),
+            preferredSource.orEmpty()
+        ).joinToString("|")
 
     private fun handleRootBack() {
         val now = SystemClock.elapsedRealtime()

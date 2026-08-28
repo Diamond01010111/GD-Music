@@ -81,7 +81,8 @@ fun MusicApp(
         callback: (Result<List<Track>>) -> Unit
     ) -> Unit,
 
-    onRequestLyrics: (Track, (Result<Track>) -> Unit) -> Unit,
+    onRequestLyrics: (Track, String?, (Result<Track>) -> Unit) -> Unit,
+    onSwitchCurrentSource: (Track, String, (Result<Unit>) -> Unit) -> Unit,
 
     onPlayResults: (
         tracks: List<Track>,
@@ -335,15 +336,30 @@ fun MusicApp(
                     track = nowPlayingTrack,
                     artworkUrl = artworkUrl,
                     isPlaying = isPlaying,
+                    playMode = playMode,
                     playbackProgress = playbackProgress,
                     playbackPositionMs = playbackPositionMs,
                     playbackDurationMs = playbackDurationMs,
                     onBack = { showPlayerDetail = false },
                     onPlayPause = onPlayPause,
+                    onSwitchPlayMode = onSwitchPlayMode,
                     onSkipPrevious = onSkipPrevious,
                     onSkipNext = onSkipNext,
+                    onOpenQueue = { showQueue = true },
                     onSeekTo = onSeekTo,
-                    onRequestLyrics = onRequestLyrics
+                    onRequestLyrics = onRequestLyrics,
+                    onSwitchSongSource = onSwitchCurrentSource,
+                    onPlayNext = onPlayNext,
+                    onAddToPlaylist = onAddToPlaylist,
+                    onFavorite = { track -> pendingFavoriteTrack = track },
+                    onSearchArtist = { artist, source ->
+                        showPlayerDetail = false
+                        executeSearch(artist, SearchCategory.SONG, source)
+                    },
+                    onSearchAlbum = { album, source ->
+                        showPlayerDetail = false
+                        executeSearch(album, SearchCategory.ALBUM, source)
+                    }
                 )
             } else when (currentPage) {
                 AppPage.HOME -> {

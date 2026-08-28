@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.diamond.gdapplication.Track
+import com.diamond.gdapplication.model.supportedMusicSources
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,12 +23,17 @@ fun TrackMoreBottomSheet(
     onFavorite: (Track) -> Unit,
     onSearchArtist: (String) -> Unit,
     onSearchAlbum: (String) -> Unit,
-    onRemove: ((Track) -> Unit)? = null
+    onRemove: ((Track) -> Unit)? = null,
+    songSource: String? = null,
+    lyricSource: String? = null,
+    onSwitchSongSource: ((String) -> Unit)? = null,
+    onSwitchLyricSource: ((String) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = false
     )
     var choosingArtist by remember(track.id) { mutableStateOf(false) }
+    var choosingSource by remember(track.id) { mutableStateOf<SourceTarget?>(null) }
     val artists = remember(track.artist) { splitArtists(track.artist) }
 
     ModalBottomSheet(
@@ -67,7 +73,42 @@ fun TrackMoreBottomSheet(
 
             HorizontalDivider()
 
-            if (choosingArtist) {
+            if (choosingSource != null) {
+                Text(
+                    text = if (choosingSource == SourceTarget.SONG) {
+                        "选择歌曲播放源"
+                    } else {
+                        "选择歌词来源"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(20.dp)
+                )
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(
+                        supportedMusicSources.filter { it.recommended },
+                        key = { it.value }
+                    ) { source ->
+                        ListItem(
+                            headlineContent = { Text(source.label) },
+                            supportingContent = { Text(source.value) },
+                            leadingContent = {
+                                Icon(Icons.Default.SwapHoriz, contentDescription = null)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val target = choosingSource
+                                    onDismiss()
+                                    if (target == SourceTarget.SONG) {
+                                        onSwitchSongSource?.invoke(source.value)
+                                    } else {
+                                        onSwitchLyricSource?.invoke(source.value)
+                                    }
+                                }
+                        )
+                    }
+                }
+            } else if (choosingArtist) {
                 Text(
                     text = "选择要搜索的歌手",
                     style = MaterialTheme.typography.titleMedium,
@@ -91,6 +132,26 @@ fun TrackMoreBottomSheet(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
+                    if (songSource != null && onSwitchSongSource != null) {
+                        item {
+                            SheetAction(
+                                "歌曲源：${sourceLabel(songSource)}",
+                                Icons.Default.MusicNote
+                            ) {
+                                choosingSource = SourceTarget.SONG
+                            }
+                        }
+                    }
+                    if (onSwitchLyricSource != null) {
+                        item {
+                            SheetAction(
+                                "歌词源：${sourceLabel(lyricSource)}",
+                                Icons.Default.Lyrics
+                            ) {
+                                choosingSource = SourceTarget.LYRIC
+                            }
+                        }
+                    }
                     item {
                         SheetAction("添加到下一首播放", Icons.Default.QueuePlayNext) {
                             onDismiss()
@@ -150,6 +211,17 @@ fun TrackMoreBottomSheet(
         }
     }
 }
+
+private enum class SourceTarget {
+    SONG,
+    LYRIC
+}
+
+private fun sourceLabel(source: String?): String = supportedMusicSources
+    .firstOrNull { it.value == source }
+    ?.label
+    ?: source?.ifBlank { "自动匹配" }
+    ?: "自动匹配"
 
 @Composable
 private fun SheetAction(
