@@ -4,12 +4,14 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.view.KeyEvent;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.session.MediaSession;
+import androidx.media3.session.SessionResult;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -45,9 +47,6 @@ public class PlaybackNotificationManager {
         Context appContext = context.getApplicationContext();
         this.musicController = musicController;
         this.player = player;
-        this.mediaSession = new MediaSession.Builder(appContext, player)
-                .setId("phone_playback")
-                .build();
 
         Intent openAppIntent = new Intent(appContext, ComposeMainActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -57,6 +56,12 @@ public class PlaybackNotificationManager {
                 openAppIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
+
+        this.mediaSession = new MediaSession.Builder(appContext, player)
+                .setId("phone_playback")
+                .setSessionActivity(contentIntent)
+                .setCallback(new PhoneMediaSessionCallback())
+                .build();
 
         notificationManager =
                 new androidx.media3.ui.PlayerNotificationManager.Builder(
@@ -131,9 +136,7 @@ public class PlaybackNotificationManager {
                         )
                         .build();
 
-//        notificationManager.setMediaSessionToken(
-//                mediaSession.getPlatformToken()
-//        );
+        attachMediaSessionToken();
         notificationManager.setUsePlayPauseActions(false);
         notificationManager.setUsePreviousAction(false);
         notificationManager.setUseNextAction(false);
@@ -150,6 +153,106 @@ public class PlaybackNotificationManager {
     public void release() {
         notificationManager.setPlayer(null);
         mediaSession.release();
+    }
+
+    /**
+     * Associates the notification with this app's Media3 session so System UI,
+     * vivo 原子随身听 and in-car media controls keep targeting GD 音乐.
+     *
+     * <p>Media3 1.4.1 exposes a legacy support-v4 return type on another method
+     * of MediaSession. Calling getPlatformToken directly can therefore make
+     * javac try to resolve a class that this project does not use. Reflection
+     * avoids that unrelated linkage while still obtaining the platform token.</p>
+     */
+    private void attachMediaSessionToken() {
+        try {
+            Object token = mediaSession.getClass()
+                    .getMethod("getPlatformToken")
+                    .invoke(mediaSession);
+            notificationManager.setMediaSessionToken(
+                    (android.media.session.MediaSession.Token) token
+            );
+        } catch (ReflectiveOperationException | ClassCastException | LinkageError ignored) {
+            // MediaSession itself remains active even if an OEM rejects the token binding.
+        }
+    }
+
+    private final class PhoneMediaSessionCallback implements MediaSession.Callback {
+
+        @Override
+        public boolean onMediaButtonEvent(
+                MediaSession session,
+                MediaSession.ControllerInfo controllerInfo,
+                Intent intent
+        ) {
+            KeyEvent event = intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+            if (event == null) {
+                return false;
+            }
+
+            int keyCode = event.getKeyCode();
+            boolean supported = keyCode == KeyEvent.KEYCODE_MEDIA_NEXT
+                    || keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                    || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY
+                    || keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE
+                    || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+                    || keyCode == KeyEvent.KEYCODE_HEADSETHOOK;
+            if (!supported) {
+                return false;
+            }
+
+            // Consume ACTION_UP as well, otherwise some OEMs dispatch the same click twice.
+            if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() > 0) {
+                return true;
+            }
+
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_MEDIA_NEXT:
+                    musicController.playNext();
+                    break;
+                case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                    musicController.playPrevious();
+                    break;
+                case KeyEvent.KEYCODE_MEDIA_PLAY:
+                    if (!player.isPlaying()) {
+                        musicController.playOrPause();
+                    }
+                    break;
+                case KeyEvent.KEYCODE_MEDIA_PAUSE:
+                    if (player.isPlaying()) {
+                        musicController.playOrPause();
+                    }
+                    break;
+                case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                case KeyEvent.KEYCODE_HEADSETHOOK:
+                    musicController.playOrPause();
+                    break;
+                default:
+                    return false;
+            }
+            invalidate();
+            return true;
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public int onPlayerCommandRequest(
+                MediaSession session,
+                MediaSession.ControllerInfo controller,
+                int playerCommand
+        ) {
+            if (playerCommand == Player.COMMAND_SEEK_TO_NEXT
+                    || playerCommand == Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM) {
+                musicController.playNext();
+                return SessionResult.RESULT_SUCCESS;
+            }
+            if (playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS
+                    || playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) {
+                musicController.playPrevious();
+                return SessionResult.RESULT_SUCCESS;
+            }
+            return SessionResult.RESULT_SUCCESS;
+        }
     }
 
     private class NotificationActionReceiver

@@ -1,5 +1,6 @@
 package com.diamond.gdapplication.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -94,7 +95,8 @@ fun MusicApp(
     onRemoveLocalPlaylistTrack: (String, Track) -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
-    onPlayNext: (Track) -> Unit
+    onPlayNext: (Track) -> Unit,
+    onRootBack: () -> Unit
 ) {
     var currentPage by remember {
         mutableStateOf(AppPage.HOME)
@@ -161,6 +163,12 @@ fun MusicApp(
         currentPage == AppPage.HOME ||
                 currentPage == AppPage.FAVORITE ||
                 currentPage == AppPage.NETEASE_PLAYLIST
+
+    // 顶层页面不再把系统返回键直接交给 Activity。详情页和搜索页会在各自
+    // 的 Composable 中注册更靠后的 BackHandler，因此会优先返回上一级。
+    BackHandler(enabled = showNavigationBar) {
+        onRootBack()
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),

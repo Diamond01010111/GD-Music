@@ -1,5 +1,6 @@
 package com.diamond.gdapplication.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,6 +33,10 @@ fun FavoriteScreen(
     var selectedId by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     val selected = playlists.firstOrNull { it.id == selectedId }
+
+    BackHandler(enabled = selected != null) {
+        selectedId = null
+    }
 
     if (selected != null) {
         FavoriteDetail(
