@@ -34,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ import com.diamond.gdapplication.ui.components.QueueBottomSheet
 import com.diamond.gdapplication.ui.screens.FavoriteScreen
 import com.diamond.gdapplication.ui.screens.HomeScreen
 import com.diamond.gdapplication.ui.screens.NeteasePlaylistScreen
+import com.diamond.gdapplication.ui.screens.PlayerDetailScreen
 import com.diamond.gdapplication.ui.screens.SearchResultsScreen
 import com.diamond.gdapplication.ui.screens.SearchScreen
 
@@ -67,14 +69,19 @@ fun MusicApp(
     queue: List<Track>,
     currentIndex: Int,
     playbackProgress: Float,
+    playbackPositionMs: Long,
+    playbackDurationMs: Long,
     localPlaylists: List<LocalPlaylistStore.LocalPlaylist>,
 
     onRequestSearch: (
         keyword: String,
         category: SearchCategory,
         source: String,
+        page: Int,
         callback: (Result<List<Track>>) -> Unit
     ) -> Unit,
+
+    onRequestLyrics: (Track, (Result<Track>) -> Unit) -> Unit,
 
     onPlayResults: (
         tracks: List<Track>,
@@ -95,6 +102,7 @@ fun MusicApp(
     onRemoveLocalPlaylistTrack: (String, Track) -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
+    onSeekTo: (Long) -> Unit,
     onPlayNext: (Track) -> Unit,
     onRootBack: () -> Unit
 ) {
@@ -122,11 +130,31 @@ fun MusicApp(
         mutableStateOf(false)
     }
 
+    var isLoadingMore by remember {
+        mutableStateOf(false)
+    }
+
+    var resultPage by remember {
+        mutableStateOf(1)
+    }
+
+    var searchGeneration by remember {
+        mutableStateOf(0)
+    }
+
+    var hasMoreResults by remember {
+        mutableStateOf(false)
+    }
+
     var searchError by remember {
         mutableStateOf<String?>(null)
     }
 
     var showQueue by remember {
+        mutableStateOf(false)
+    }
+
+    var showPlayerDetail by remember {
         mutableStateOf(false)
     }
 
@@ -139,24 +167,68 @@ fun MusicApp(
         category: SearchCategory,
         source: String
     ) {
+        searchGeneration += 1
+        val generation = searchGeneration
         isSearching = true
+        isLoadingMore = false
         searchError = null
 
-        onRequestSearch(keyword, category, source) { result ->
-            isSearching = false
+        onRequestSearch(keyword, category, source, 1) { result ->
+            if (generation == searchGeneration) {
+                isSearching = false
 
-            result.onSuccess { tracks ->
-                resultKeyword = keyword
-                resultCategory = category
-                resultSource = source
-                resultTracks = tracks
-                currentPage = AppPage.SEARCH_RESULTS
-            }
+                result.onSuccess { tracks ->
+                    resultKeyword = keyword
+                    resultCategory = category
+                    resultSource = source
+                    resultTracks = tracks
+                    resultPage = 1
+                    hasMoreResults = tracks.size >= SEARCH_PAGE_SIZE
+                    currentPage = AppPage.SEARCH_RESULTS
+                }
 
-            result.onFailure { error ->
-                searchError = error.message ?: "搜索失败"
+                result.onFailure { error ->
+                    searchError = error.message ?: "搜索失败"
+                }
             }
         }
+    }
+
+    fun loadNextSearchPage() {
+        if (isSearching || isLoadingMore || !hasMoreResults) return
+
+        val keyword = resultKeyword
+        val category = resultCategory
+        val source = resultSource
+        val nextPage = resultPage + 1
+        val generation = searchGeneration
+        isLoadingMore = true
+
+        onRequestSearch(keyword, category, source, nextPage) { result ->
+            // A new search may have started while this page was loading.
+            val searchChanged = generation != searchGeneration ||
+                keyword != resultKeyword ||
+                category != resultCategory ||
+                source != resultSource
+            if (!searchChanged) {
+                isLoadingMore = false
+                result.onSuccess { tracks ->
+                    resultTracks = (resultTracks + tracks).distinctBy {
+                        "${it.source}:${it.id}"
+                    }
+                    resultPage = nextPage
+                    hasMoreResults = tracks.size >= SEARCH_PAGE_SIZE
+                }
+
+                result.onFailure { error ->
+                    searchError = error.message ?: "加载下一页失败"
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(nowPlayingTrack?.source, nowPlayingTrack?.id) {
+        if (nowPlayingTrack == null) showPlayerDetail = false
     }
 
     val showNavigationBar =
@@ -166,7 +238,7 @@ fun MusicApp(
 
     // 顶层页面不再把系统返回键直接交给 Activity。详情页和搜索页会在各自
     // 的 Composable 中注册更靠后的 BackHandler，因此会优先返回上一级。
-    BackHandler(enabled = showNavigationBar) {
+    BackHandler(enabled = showNavigationBar && !showPlayerDetail) {
         onRootBack()
     }
 
@@ -175,7 +247,7 @@ fun MusicApp(
         contentWindowInsets = WindowInsets.safeDrawing,
 
         bottomBar = {
-            Column(
+            if (!showPlayerDetail) Column(
                 modifier = Modifier.padding(
                     bottom = if (showNavigationBar) 0.dp else 12.dp
                 )
@@ -190,6 +262,9 @@ fun MusicApp(
                     onSwitchPlayMode = onSwitchPlayMode,
                     onOpenQueue = {
                         showQueue = true
+                    },
+                    onOpenDetails = {
+                        if (nowPlayingTrack != null) showPlayerDetail = true
                     },
                     onSwipePrevious = onSkipPrevious,
                     onSwipeNext = onSkipNext
@@ -255,7 +330,22 @@ fun MusicApp(
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding)
         ) {
-            when (currentPage) {
+            if (showPlayerDetail && nowPlayingTrack != null) {
+                PlayerDetailScreen(
+                    track = nowPlayingTrack,
+                    artworkUrl = artworkUrl,
+                    isPlaying = isPlaying,
+                    playbackProgress = playbackProgress,
+                    playbackPositionMs = playbackPositionMs,
+                    playbackDurationMs = playbackDurationMs,
+                    onBack = { showPlayerDetail = false },
+                    onPlayPause = onPlayPause,
+                    onSkipPrevious = onSkipPrevious,
+                    onSkipNext = onSkipNext,
+                    onSeekTo = onSeekTo,
+                    onRequestLyrics = onRequestLyrics
+                )
+            } else when (currentPage) {
                 AppPage.HOME -> {
                     HomeScreen(
                         onOpenSearch = {
@@ -339,10 +429,13 @@ fun MusicApp(
                         source = resultSource,
                         tracks = resultTracks,
                         isSearching = isSearching,
+                        isLoadingMore = isLoadingMore,
+                        hasMoreResults = hasMoreResults,
                         onBack = {
                             currentPage = AppPage.SEARCH
                         },
                         onSearch = ::executeSearch,
+                        onLoadMore = ::loadNextSearchPage,
                         onTrackClick = { index ->
                             onPlayResults(resultTracks, index)
                         },
@@ -541,3 +634,5 @@ private fun FavoriteSheetCover(
         }
     }
 }
+
+private const val SEARCH_PAGE_SIZE = 30

@@ -150,11 +150,7 @@ private fun FavoriteDetail(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "返回我的收藏")
             }
-            Text(
-                favorite.name,
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
+            Spacer(Modifier.weight(1f))
             IconButton(onClick = { confirmDelete = true }) {
                 Icon(Icons.Default.DeleteOutline, contentDescription = "删除收藏")
             }

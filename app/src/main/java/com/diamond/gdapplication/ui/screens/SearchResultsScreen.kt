@@ -3,6 +3,7 @@ package com.diamond.gdapplication.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -14,6 +15,8 @@ import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.model.SearchCategory
 import com.diamond.gdapplication.ui.components.SearchControls
 import com.diamond.gdapplication.ui.components.TrackMoreBottomSheet
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun SearchResultsScreen(
@@ -22,8 +25,11 @@ fun SearchResultsScreen(
     source: String,
     tracks: List<Track>,
     isSearching: Boolean,
+    isLoadingMore: Boolean,
+    hasMoreResults: Boolean,
     onBack: () -> Unit,
     onSearch: (String, SearchCategory, String) -> Unit,
+    onLoadMore: () -> Unit,
     onTrackClick: (Int) -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onFavorite: (Track) -> Unit,
@@ -35,11 +41,32 @@ fun SearchResultsScreen(
     var selectedCategory by remember { mutableStateOf(category) }
     var selectedSource by remember { mutableStateOf(source) }
     var moreTrack by remember { mutableStateOf<Track?>(null) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(keyword, category, source) {
         query = keyword
         selectedCategory = category
         selectedSource = source
+        if (tracks.isNotEmpty()) listState.scrollToItem(0)
+    }
+
+    LaunchedEffect(listState, tracks.size, hasMoreResults, isLoadingMore) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }
+            .distinctUntilChanged()
+            .collect { lastVisibleIndex ->
+                if (
+                    lastVisibleIndex != null &&
+                    tracks.isNotEmpty() &&
+                    lastVisibleIndex >= tracks.lastIndex - LOAD_MORE_THRESHOLD &&
+                    hasMoreResults &&
+                    !isLoadingMore &&
+                    !isSearching
+                ) {
+                    onLoadMore()
+                }
+            }
     }
 
     fun search(
@@ -115,6 +142,7 @@ fun SearchResultsScreen(
             )
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize().padding(top = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -157,6 +185,23 @@ fun SearchResultsScreen(
                         }
                     }
                 }
+
+                item(key = "search-pagination-footer") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 18.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.Center
+                    ) {
+                        when {
+                            isLoadingMore -> CircularProgressIndicator()
+                            tracks.isNotEmpty() && !hasMoreResults -> Text(
+                                "没有更多结果",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -177,3 +222,5 @@ fun SearchResultsScreen(
         )
     }
 }
+
+private const val LOAD_MORE_THRESHOLD = 5

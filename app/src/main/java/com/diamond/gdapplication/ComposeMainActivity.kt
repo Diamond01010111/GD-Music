@@ -50,11 +50,14 @@ class ComposeMainActivity : ComponentActivity() {
                 val controller = mediaController
                 var currentTrack by remember { mutableStateOf<Track?>(null) }
                 var artworkUrl by remember { mutableStateOf("") }
+                var artworkTrackKey by remember { mutableStateOf("") }
                 var isPlaying by remember { mutableStateOf(false) }
                 var playMode by remember { mutableStateOf(PlaybackMode.LIST_LOOP) }
                 var queue by remember { mutableStateOf<List<Track>>(emptyList()) }
                 var currentIndex by remember { mutableStateOf(-1) }
                 var playbackProgress by remember { mutableStateOf(0f) }
+                var playbackPositionMs by remember { mutableStateOf(0L) }
+                var playbackDurationMs by remember { mutableStateOf(0L) }
                 var localPlaylists by remember {
                     mutableStateOf(localPlaylistStore.playlists)
                 }
@@ -67,11 +70,20 @@ class ComposeMainActivity : ComponentActivity() {
                         queue = emptyList()
                         currentIndex = -1
                         playbackProgress = 0f
+                        playbackPositionMs = 0L
+                        playbackDurationMs = 0L
                         return
                     }
 
-                    currentTrack = TrackMediaItem.toTrack(controller.currentMediaItem)
-                    artworkUrl = currentTrack?.picUrl.orEmpty()
+                    val nextTrack = TrackMediaItem.toTrack(controller.currentMediaItem)
+                    val nextTrackKey = nextTrack?.let { "${it.source}:${it.id}" }.orEmpty()
+                    currentTrack = nextTrack
+                    if (nextTrackKey != artworkTrackKey) {
+                        artworkTrackKey = nextTrackKey
+                        artworkUrl = nextTrack?.picUrl.orEmpty()
+                    } else if (!nextTrack?.picUrl.isNullOrBlank()) {
+                        artworkUrl = nextTrack?.picUrl.orEmpty()
+                    }
                     isPlaying = controller.isPlaying
                     playMode = playbackMode(controller)
                     queue = (0 until controller.mediaItemCount).mapNotNull { index ->
@@ -88,6 +100,35 @@ class ComposeMainActivity : ComponentActivity() {
                     refreshMissingLocalArtwork {
                         localPlaylists = localPlaylistStore.playlists
                     }
+                }
+
+                LaunchedEffect(
+                    currentTrack?.source,
+                    currentTrack?.id,
+                    currentTrack?.picId
+                ) {
+                    val track = currentTrack ?: return@LaunchedEffect
+                    if (!track.picUrl.isNullOrBlank() && track.picUrl != "null") {
+                        artworkUrl = track.picUrl
+                        return@LaunchedEffect
+                    }
+                    val requestedKey = "${track.source}:${track.id}"
+                    api.getPicUrl(
+                        track,
+                        object : GdMusicApi.TrackCallback {
+                            override fun onSuccess(updatedTrack: Track) {
+                                runOnUiThread {
+                                    if (artworkTrackKey == requestedKey) {
+                                        artworkUrl = updatedTrack.picUrl.orEmpty()
+                                    }
+                                }
+                            }
+
+                            override fun onError(e: Exception) {
+                                // Keep the placeholder artwork for this track.
+                            }
+                        }
+                    )
                 }
 
                 DisposableEffect(controller) {
@@ -120,6 +161,8 @@ class ComposeMainActivity : ComponentActivity() {
                         } else {
                             0f
                         }
+                        playbackPositionMs = position.coerceAtLeast(0L)
+                        playbackDurationMs = duration.coerceAtLeast(0L)
                         delay(500)
                     }
                 }
@@ -132,11 +175,15 @@ class ComposeMainActivity : ComponentActivity() {
                     queue = queue,
                     currentIndex = currentIndex,
                     playbackProgress = playbackProgress,
+                    playbackPositionMs = playbackPositionMs,
+                    playbackDurationMs = playbackDurationMs,
                     localPlaylists = localPlaylists,
 
-                    onRequestSearch = { keyword, category, source, callback ->
-                        requestTracks(keyword, category, source, callback)
+                    onRequestSearch = { keyword, category, source, page, callback ->
+                        requestTracks(keyword, category, source, page, callback)
                     },
+
+                    onRequestLyrics = ::requestLyrics,
 
                     onPlayResults = ::playTracks,
 
@@ -156,6 +203,10 @@ class ComposeMainActivity : ComponentActivity() {
 
                     onSkipNext = {
                         controllerOrWarn()?.seekToNext()
+                    },
+
+                    onSeekTo = { positionMs ->
+                        controllerOrWarn()?.seekTo(positionMs.coerceAtLeast(0L))
                     },
 
                     onQueueTrackClick = { index ->
@@ -413,6 +464,7 @@ class ComposeMainActivity : ComponentActivity() {
         keyword: String,
         category: SearchCategory,
         source: String,
+        page: Int,
         callback: (Result<List<Track>>) -> Unit
     ) {
         if (keyword.isBlank()) {
@@ -437,11 +489,29 @@ class ComposeMainActivity : ComponentActivity() {
             keyword,
             requestSource,
             SEARCH_RESULT_COUNT,
-            FIRST_PAGE,
+            page.coerceAtLeast(FIRST_PAGE),
             object : GdMusicApi.SearchCallback {
                 override fun onSuccess(tracks: List<Track>) {
                     tracks.forEach { it.source = source }
                     runOnUiThread { callback(Result.success(tracks)) }
+                }
+
+                override fun onError(e: Exception) {
+                    runOnUiThread { callback(Result.failure(e)) }
+                }
+            }
+        )
+    }
+
+    private fun requestLyrics(
+        track: Track,
+        callback: (Result<Track>) -> Unit
+    ) {
+        api.getLyric(
+            track,
+            object : GdMusicApi.TrackCallback {
+                override fun onSuccess(updatedTrack: Track) {
+                    runOnUiThread { callback(Result.success(updatedTrack)) }
                 }
 
                 override fun onError(e: Exception) {
