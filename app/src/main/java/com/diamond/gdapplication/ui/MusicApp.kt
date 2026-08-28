@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import coil3.compose.AsyncImage
 import com.diamond.gdapplication.LocalPlaylistStore
-import com.diamond.gdapplication.MusicController
+import com.diamond.gdapplication.PlaybackMode
 import com.diamond.gdapplication.Track
 import com.diamond.gdapplication.model.AppPage
 import com.diamond.gdapplication.model.SearchCategory
@@ -63,7 +63,7 @@ fun MusicApp(
     nowPlayingTrack: Track?,
     artworkUrl: String,
     isPlaying: Boolean,
-    playMode: MusicController.PlayMode,
+    playMode: PlaybackMode,
     queue: List<Track>,
     currentIndex: Int,
     playbackProgress: Float,

@@ -46,7 +46,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.diamond.gdapplication.MusicController
+import com.diamond.gdapplication.PlaybackMode
 import com.diamond.gdapplication.Track
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -57,7 +57,7 @@ fun MiniPlayer(
     track: Track?,
     artworkUrl: String,
     isPlaying: Boolean,
-    playMode: MusicController.PlayMode,
+    playMode: PlaybackMode,
 
     // 0f 至 1f
     playbackProgress: Float,
@@ -213,23 +213,23 @@ fun MiniPlayer(
                 ) {
                     Icon(
                         imageVector = when (playMode) {
-                            MusicController.PlayMode.LIST_LOOP ->
+                            PlaybackMode.LIST_LOOP ->
                                 Icons.Default.Repeat
 
-                            MusicController.PlayMode.SINGLE_LOOP ->
+                            PlaybackMode.SINGLE_LOOP ->
                                 Icons.Default.RepeatOne
 
-                            MusicController.PlayMode.RANDOM ->
+                            PlaybackMode.RANDOM ->
                                 Icons.Default.Shuffle
                         },
                         contentDescription = when (playMode) {
-                            MusicController.PlayMode.LIST_LOOP ->
+                            PlaybackMode.LIST_LOOP ->
                                 "列表循环"
 
-                            MusicController.PlayMode.SINGLE_LOOP ->
+                            PlaybackMode.SINGLE_LOOP ->
                                 "单曲循环"
 
-                            MusicController.PlayMode.RANDOM ->
+                            PlaybackMode.RANDOM ->
                                 "随机播放"
                         }
                     )

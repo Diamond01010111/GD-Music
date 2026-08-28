@@ -2,15 +2,22 @@ package com.diamond.gdapplication;
 
 import android.net.Uri;
 import androidx.annotation.Nullable;
+import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
+import androidx.media3.common.Player;
+import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSpec;
+import androidx.media3.datasource.DefaultDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.session.LibraryResult;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
-import androidx.media3.common.util.UnstableApi;
 import androidx.media3.session.SessionError;
 
 import com.diamond.gdapplication.data.NeteasePlaylist;
@@ -21,19 +28,25 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Media browser and playback endpoint used by Android Auto.
+ * Shared playback and media-library endpoint used by the phone UI and Android Auto.
  *
  * <p>Android Auto renders the media tree supplied here; it does not render the
- * application's Compose activities. The tree intentionally contains only the
- * two driving-safe top-level destinations requested by the app.</p>
+ * application's Compose activities. The phone UI connects through a
+ * MediaController while Android Auto renders the driving-safe tree here.</p>
  */
+@UnstableApi
 public final class AutoPlaybackService extends MediaLibraryService {
 
     private static final String ROOT_ID = "root";
@@ -45,6 +58,8 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private static final String NETEASE_TRACK_PREFIX = "netease_track:";
     private static final String PLAYLIST_PREFIX = "playlist:";
     private static final String TRACK_PREFIX = "track:";
+    private static final long AUDIO_URL_MAX_AGE_MS = 30L * 60L * 1000L;
+    private static final long SOURCE_RESOLVE_TIMEOUT_SECONDS = 60L;
 
     private ExoPlayer player;
     private MediaLibrarySession mediaLibrarySession;
@@ -53,6 +68,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private NeteasePlaylistRepository neteaseRepository;
     private final Map<String, NeteasePlaylist> neteasePlaylists = new LinkedHashMap<>();
     private final Map<String, List<Track>> neteaseTracks = new LinkedHashMap<>();
+    private final Map<String, Track> playbackTracks = new ConcurrentHashMap<>();
 
     @Override
     public void onCreate() {
@@ -62,12 +78,29 @@ public final class AutoPlaybackService extends MediaLibraryService {
         neteaseRepository = new NeteasePlaylistRepository();
         String neteaseUserId = NeteasePlaylistCache.savedUserId(this);
         rememberNeteasePlaylists(NeteasePlaylistCache.read(this, neteaseUserId));
-        player = new ExoPlayer.Builder(this).build();
+        ResolvingDataSource.Factory resolvingDataSourceFactory =
+                new ResolvingDataSource.Factory(
+                        new DefaultDataSource.Factory(this),
+                        this::resolvePlaybackDataSpec
+                );
+        player = new ExoPlayer.Builder(this)
+                .setMediaSourceFactory(
+                        new DefaultMediaSourceFactory(resolvingDataSourceFactory)
+                )
+                .build();
+        player.setAudioAttributes(
+                new AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                true
+        );
+        player.setRepeatMode(Player.REPEAT_MODE_ALL);
         mediaLibrarySession = new MediaLibrarySession.Builder(
                 this,
                 player,
                 new AutoLibraryCallback()
-        ).setId("android_auto").build();
+        ).setId("shared_playback").build();
     }
 
     @Nullable
@@ -120,7 +153,6 @@ public final class AutoPlaybackService extends MediaLibraryService {
             return immediatePagedResult(children, page, pageSize, params);
         }
 
-        @UnstableApi
         @Override
         public ListenableFuture<LibraryResult<MediaItem>> onGetItem(
                 MediaLibrarySession session,
@@ -128,16 +160,12 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 String mediaId
         ) {
             MediaItem item = itemFor(mediaId);
-
             if (item == null) {
                 return Futures.immediateFuture(
                         LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                 );
             }
-
-            return Futures.immediateFuture(
-                    LibraryResult.ofItem(item, null)
-            );
+            return Futures.immediateFuture(LibraryResult.ofItem(item, null));
         }
 
         @Override
@@ -146,13 +174,25 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 MediaSession.ControllerInfo controller,
                 List<MediaItem> mediaItems
         ) {
-            if (mediaItems.isEmpty()) {
-                return Futures.immediateFuture(ImmutableList.of());
-            }
+            return Futures.immediateFuture(preparePlayableItems(mediaItems));
+        }
 
-            SettableFuture<List<MediaItem>> result = SettableFuture.create();
-            resolvePlayableItems(mediaItems, 0, new ArrayList<>(), result);
-            return result;
+        @Override
+        public ListenableFuture<MediaSession.MediaItemsWithStartPosition> onSetMediaItems(
+                MediaSession mediaSession,
+                MediaSession.ControllerInfo controller,
+                List<MediaItem> mediaItems,
+                int startIndex,
+                long startPositionMs
+        ) {
+            QueueExpansion expansion = expandLibraryQueue(mediaItems, startIndex);
+            return Futures.immediateFuture(
+                    new MediaSession.MediaItemsWithStartPosition(
+                            preparePlayableItems(expansion.items),
+                            expansion.startIndex,
+                            startPositionMs
+                    )
+            );
         }
     }
 
@@ -166,6 +206,9 @@ public final class AutoPlaybackService extends MediaLibraryService {
         }
 
         if (FAVORITES_ID.equals(parentId)) {
+            // The phone UI may edit favorites while this long-lived service is active.
+            // Re-open the store before publishing the Android Auto library snapshot.
+            playlistStore = new LocalPlaylistStore(getApplicationContext());
             for (LocalPlaylistStore.LocalPlaylist playlist : playlistStore.getPlaylists()) {
                 MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                         .setTitle(playlist.name)
@@ -215,8 +258,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
             for (int index = 0; index < playlist.tracks.size(); index++) {
                 items.add(trackItem(
                         localTrackId(playlistId, index),
-                        playlist.tracks.get(index),
-                        false
+                        playlist.tracks.get(index)
                 ));
             }
         }
@@ -259,7 +301,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
         TrackLocation location = findTrack(mediaId);
         return location == null
                 ? null
-                : trackItem(location.mediaId, location.track, false);
+                : trackItem(location.mediaId, location.track);
     }
 
     private MediaItem browsableItem(String mediaId, String title) {
@@ -380,7 +422,6 @@ public final class AutoPlaybackService extends MediaLibraryService {
                     @Override
                     public void onSuccess(List<? extends Track> tracks) {
                         List<Track> trackList = new ArrayList<>(tracks);
-
                         neteaseTracks.put(playlistId, trackList);
                         future.set(pagedResult(
                                 neteaseTrackItems(playlistId, trackList),
@@ -439,8 +480,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
         for (int index = 0; index < tracks.size(); index++) {
             items.add(trackItem(
                     neteaseTrackId(playlistId, index),
-                    tracks.get(index),
-                    false
+                    tracks.get(index)
             ));
         }
         return items;
@@ -493,75 +533,138 @@ public final class AutoPlaybackService extends MediaLibraryService {
         return NETEASE_TRACK_PREFIX + playlistId + ":" + index;
     }
 
-    private MediaItem trackItem(String mediaId, Track track, boolean includeUri) {
-        MediaMetadata.Builder metadata = new MediaMetadata.Builder()
-                .setTitle(track.name)
-                .setArtist(track.artist)
-                .setAlbumTitle(track.album)
-                .setIsBrowsable(false)
-                .setIsPlayable(true)
-                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC);
-
-        if (isPresent(track.picUrl)) {
-            metadata.setArtworkUri(Uri.parse(track.picUrl));
-        }
-
-        MediaItem.Builder item = new MediaItem.Builder()
-                .setMediaId(mediaId)
-                .setMediaMetadata(metadata.build());
-        if (includeUri && isPresent(track.audioUrl)) {
-            item.setUri(track.audioUrl);
-        }
-        return item.build();
+    private MediaItem trackItem(String mediaId, Track track) {
+        playbackTracks.put(mediaId, track);
+        return TrackMediaItem.create(mediaId, track);
     }
 
-    private void resolvePlayableItems(
-            List<MediaItem> requested,
-            int index,
-            List<MediaItem> resolved,
-            SettableFuture<List<MediaItem>> future
-    ) {
-        if (index >= requested.size()) {
-            future.set(resolved);
-            return;
+    private List<MediaItem> preparePlayableItems(List<MediaItem> requested) {
+        List<MediaItem> prepared = new ArrayList<>();
+        for (MediaItem item : requested) {
+            Track track = TrackMediaItem.toTrack(item);
+            if (track == null) {
+                TrackLocation location = findTrack(item.mediaId);
+                track = location == null ? null : location.track;
+            }
+            if (track != null) {
+                prepared.add(trackItem(item.mediaId, track));
+            }
+        }
+        return prepared;
+    }
+
+    private QueueExpansion expandLibraryQueue(List<MediaItem> requested, int startIndex) {
+        if (requested.size() != 1) {
+            return new QueueExpansion(requested, startIndex);
         }
 
-        TrackLocation location = findTrack(requested.get(index).mediaId);
-        if (location == null) {
-            resolvePlayableItems(requested, index + 1, resolved, future);
-            return;
+        String mediaId = requested.get(0).mediaId;
+        boolean netease = mediaId.startsWith(NETEASE_TRACK_PREFIX);
+        String prefix = netease ? NETEASE_TRACK_PREFIX : TRACK_PREFIX;
+        if (!mediaId.startsWith(prefix)) {
+            return new QueueExpansion(requested, startIndex);
         }
 
-        if (isPresent(location.track.audioUrl)) {
-            resolved.add(trackItem(location.mediaId, location.track, true));
-            resolvePlayableItems(requested, index + 1, resolved, future);
-            return;
+        String value = mediaId.substring(prefix.length());
+        int separator = value.lastIndexOf(':');
+        if (separator <= 0) {
+            return new QueueExpansion(requested, startIndex);
         }
 
+        try {
+            String playlistId = value.substring(0, separator);
+            int selectedIndex = Integer.parseInt(value.substring(separator + 1));
+            List<Track> tracks;
+            if (netease) {
+                tracks = neteaseTracks.get(playlistId);
+            } else {
+                LocalPlaylistStore.LocalPlaylist playlist = findPlaylist(playlistId);
+                tracks = playlist == null ? null : playlist.tracks;
+            }
+            if (tracks == null || tracks.isEmpty()
+                    || selectedIndex < 0 || selectedIndex >= tracks.size()) {
+                return new QueueExpansion(requested, startIndex);
+            }
+
+            List<MediaItem> expanded = new ArrayList<>();
+            for (int index = 0; index < tracks.size(); index++) {
+                String id = netease
+                        ? neteaseTrackId(playlistId, index)
+                        : localTrackId(playlistId, index);
+                expanded.add(trackItem(id, tracks.get(index)));
+            }
+            return new QueueExpansion(expanded, selectedIndex);
+        } catch (NumberFormatException ignored) {
+            return new QueueExpansion(requested, startIndex);
+        }
+    }
+
+    private DataSpec resolvePlaybackDataSpec(DataSpec dataSpec) throws IOException {
+        if (!TrackMediaItem.isPlaybackUri(dataSpec.uri)) {
+            return dataSpec;
+        }
+
+        String mediaId = TrackMediaItem.mediaIdFromPlaybackUri(dataSpec.uri);
+        Track track = mediaId == null ? null : playbackTracks.get(mediaId);
+        if (track == null) {
+            throw new IOException("找不到播放项目：" + mediaId);
+        }
+
+        Track resolved = hasValidAudioUrl(track) ? track : resolveTrackBlocking(track);
+        if (!isPresent(resolved.audioUrl)) {
+            throw new IOException("没有拿到播放地址：" + resolved.name);
+        }
+        playbackTracks.put(mediaId, resolved);
+        return dataSpec.withUri(Uri.parse(resolved.audioUrl));
+    }
+
+    private Track resolveTrackBlocking(Track track) throws IOException {
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Track> result = new AtomicReference<>();
+        AtomicReference<Exception> failure = new AtomicReference<>();
         GdMusicApi.TrackCallback callback = new GdMusicApi.TrackCallback() {
             @Override
-            public void onSuccess(Track track) {
-                if (isPresent(track.audioUrl)) {
-                    resolved.add(trackItem(location.mediaId, track, true));
-                }
-                resolvePlayableItems(requested, index + 1, resolved, future);
+            public void onSuccess(Track resolvedTrack) {
+                result.set(resolvedTrack);
+                latch.countDown();
             }
 
             @Override
             public void onError(Exception error) {
-                resolvePlayableItems(requested, index + 1, resolved, future);
+                failure.set(error);
+                latch.countDown();
             }
         };
 
-        if (location.track.externalMetadata) {
-            musicApi.resolveExternalTrack(location.track, 999, callback);
+        if (track.externalMetadata) {
+            musicApi.resolveExternalTrack(track, 999, callback);
         } else {
-            musicApi.getAudioUrl(location.track, 999, callback);
+            musicApi.getAudioUrl(track, 999, callback);
         }
+
+        try {
+            if (!latch.await(SOURCE_RESOLVE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IOException("获取播放地址超时：" + track.name);
+            }
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IOException("获取播放地址被中断：" + track.name, error);
+        }
+
+        if (result.get() != null) {
+            return result.get();
+        }
+        throw new IOException("获取播放地址失败：" + track.name, failure.get());
+    }
+
+    private boolean hasValidAudioUrl(Track track) {
+        return isPresent(track.audioUrl)
+                && System.currentTimeMillis() - track.audioUrlCachedAt < AUDIO_URL_MAX_AGE_MS;
     }
 
     @Nullable
     private LocalPlaylistStore.LocalPlaylist findPlaylist(String playlistId) {
+        playlistStore = new LocalPlaylistStore(getApplicationContext());
         for (LocalPlaylistStore.LocalPlaylist playlist : playlistStore.getPlaylists()) {
             if (playlist.id.equals(playlistId)) {
                 return playlist;
@@ -621,6 +724,16 @@ public final class AutoPlaybackService extends MediaLibraryService {
         TrackLocation(String mediaId, Track track) {
             this.mediaId = mediaId;
             this.track = track;
+        }
+    }
+
+    private static final class QueueExpansion {
+        final List<MediaItem> items;
+        final int startIndex;
+
+        QueueExpansion(List<MediaItem> items, int startIndex) {
+            this.items = items;
+            this.startIndex = startIndex;
         }
     }
 }
