@@ -2,17 +2,15 @@ package com.diamond.gdapplication;
 
 import android.net.Uri;
 import androidx.annotation.Nullable;
-import androidx.media3.common.AudioAttributes;
-import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.MediaMetadata;
-import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.session.LibraryResult;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
+import androidx.media3.common.util.UnstableApi;
 import androidx.media3.session.SessionError;
 
 import com.diamond.gdapplication.data.NeteasePlaylist;
@@ -36,7 +34,6 @@ import java.util.Map;
  * application's Compose activities. The tree intentionally contains only the
  * two driving-safe top-level destinations requested by the app.</p>
  */
-@UnstableApi
 public final class AutoPlaybackService extends MediaLibraryService {
 
     private static final String ROOT_ID = "root";
@@ -66,13 +63,6 @@ public final class AutoPlaybackService extends MediaLibraryService {
         String neteaseUserId = NeteasePlaylistCache.savedUserId(this);
         rememberNeteasePlaylists(NeteasePlaylistCache.read(this, neteaseUserId));
         player = new ExoPlayer.Builder(this).build();
-        player.setAudioAttributes(
-                new AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                true
-        );
         mediaLibrarySession = new MediaLibrarySession.Builder(
                 this,
                 player,
@@ -130,6 +120,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
             return immediatePagedResult(children, page, pageSize, params);
         }
 
+        @UnstableApi
         @Override
         public ListenableFuture<LibraryResult<MediaItem>> onGetItem(
                 MediaLibrarySession session,
@@ -137,12 +128,16 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 String mediaId
         ) {
             MediaItem item = itemFor(mediaId);
+
             if (item == null) {
                 return Futures.immediateFuture(
                         LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
                 );
             }
-            return Futures.immediateFuture(LibraryResult.ofItem(item, null));
+
+            return Futures.immediateFuture(
+                    LibraryResult.ofItem(item, null)
+            );
         }
 
         @Override
@@ -318,13 +313,12 @@ public final class AutoPlaybackService extends MediaLibraryService {
                 userId,
                 new NeteasePlaylistRepository.PlaylistsCallback() {
                     @Override
-                    public void onSuccess(List<? extends NeteasePlaylist> playlists) {
-                        List<NeteasePlaylist> playlistList = new ArrayList<>(playlists);
-                        rememberNeteasePlaylists(playlistList);
+                    public void onSuccess(List<NeteasePlaylist> playlists) {
+                        rememberNeteasePlaylists(playlists);
                         NeteasePlaylistCache.save(
                                 AutoPlaybackService.this,
                                 userId,
-                                playlistList
+                                playlists
                         );
                         future.set(pagedResult(
                                 neteasePlaylistItems(sectionId, userId),
@@ -386,6 +380,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
                     @Override
                     public void onSuccess(List<? extends Track> tracks) {
                         List<Track> trackList = new ArrayList<>(tracks);
+
                         neteaseTracks.put(playlistId, trackList);
                         future.set(pagedResult(
                                 neteaseTrackItems(playlistId, trackList),
