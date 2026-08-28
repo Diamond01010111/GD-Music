@@ -202,29 +202,24 @@ fun MiniPlayer(
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 10.dp)
+                                .basicMarquee(
+                                    iterations = Int.MAX_VALUE,
+                                    initialDelayMillis = MARQUEE_INITIAL_DELAY_MS,
+                                    repeatDelayMillis = MARQUEE_REPEAT_DELAY_MS
+                                )
                         ) {
                             Text(
                                 text = track?.name ?: "暂未播放",
                                 style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.basicMarquee(
-                                    iterations = Int.MAX_VALUE,
-                                    initialDelayMillis = MARQUEE_INITIAL_DELAY_MS,
-                                    repeatDelayMillis = MARQUEE_REPEAT_DELAY_MS
-                                )
+                                softWrap = false
                             )
 
                             Text(
                                 text = track?.artist ?: "请选择一首歌曲",
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.basicMarquee(
-                                    iterations = Int.MAX_VALUE,
-                                    initialDelayMillis = MARQUEE_INITIAL_DELAY_MS,
-                                    repeatDelayMillis = MARQUEE_REPEAT_DELAY_MS
-                                )
+                                softWrap = false
                             )
                         }
                     }
