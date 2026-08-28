@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 android {
-    namespace = "com.diamond.gdapplication"
+    namespace = "com.diamond.gdmusic"
     compileSdk {
         version = release(37)
     }
