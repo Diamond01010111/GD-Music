@@ -4,5 +4,9 @@
     <string name="playback_channel_description">显示当前歌曲与播放控制</string>
     <string name="auto_favorites">收藏</string>
     <string name="auto_netease_playlists">网易云歌单</string>
-    <string name="auto_import_on_phone">请先在手机端导入网易云歌单</string>
+    <string name="auto_netease_created">创建的歌单</string>
+    <string name="auto_netease_subscribed">收藏的歌单</string>
+    <string name="auto_netease_user_hint">请先在手机端输入网易云用户 ID</string>
+    <string name="auto_netease_load_error">网易云歌单加载失败，请在手机端刷新</string>
+    <string name="auto_netease_tracks_error">歌曲加载失败，请稍后重试</string>
 </resources>
