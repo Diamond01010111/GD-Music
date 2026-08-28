@@ -25,6 +25,16 @@ data class NeteasePlaylist(
 }
 
 class NeteasePlaylistRepository {
+    interface PlaylistsCallback {
+        fun onSuccess(playlists: List<NeteasePlaylist>)
+        fun onError(error: Throwable)
+    }
+
+    interface TracksCallback {
+        fun onSuccess(tracks: List<Track>)
+        fun onError(error: Throwable)
+    }
+
     private val client = OkHttpClient.Builder()
         .callTimeout(20, TimeUnit.SECONDS)
         .build()
@@ -40,6 +50,16 @@ class NeteasePlaylistRepository {
             playlists = mutableListOf(),
             callback = callback
         )
+    }
+
+    fun loadPublicPlaylistsForJava(
+        userId: String,
+        callback: PlaylistsCallback
+    ) {
+        loadPublicPlaylists(userId) { result ->
+            result.onSuccess(callback::onSuccess)
+                .onFailure(callback::onError)
+        }
     }
 
     fun loadPlaylistTracks(
@@ -67,6 +87,16 @@ class NeteasePlaylistRepository {
                     }
                 }
             }
+        }
+    }
+
+    fun loadPlaylistTracksForJava(
+        playlistId: String,
+        callback: TracksCallback
+    ) {
+        loadPlaylistTracks(playlistId) { result ->
+            result.onSuccess(callback::onSuccess)
+                .onFailure(callback::onError)
         }
     }
 
