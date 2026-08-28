@@ -3,6 +3,7 @@ package com.diamond.gdmusic;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Handler;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.media3.common.AudioAttributes;
@@ -35,6 +36,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -71,6 +73,9 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private final Map<String, NeteasePlaylist> neteasePlaylists = new LinkedHashMap<>();
     private final Map<String, List<Track>> neteaseTracks = new LinkedHashMap<>();
     private final Map<String, Track> playbackTracks = new ConcurrentHashMap<>();
+    private final Set<String> pendingArtworkItems = ConcurrentHashMap.newKeySet();
+    private Handler playbackHandler;
+    private volatile boolean destroyed;
 
     @Override
     public void onCreate() {
@@ -90,6 +95,16 @@ public final class AutoPlaybackService extends MediaLibraryService {
                         new DefaultMediaSourceFactory(resolvingDataSourceFactory)
                 )
                 .build();
+        playbackHandler = new Handler(player.getApplicationLooper());
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onMediaItemTransition(
+                    @Nullable MediaItem mediaItem,
+                    int reason
+            ) {
+                requestMissingArtwork(mediaItem);
+            }
+        });
         player.setAudioAttributes(
                 new AudioAttributes.Builder()
                         .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -126,9 +141,60 @@ public final class AutoPlaybackService extends MediaLibraryService {
 
     @Override
     public void onDestroy() {
+        destroyed = true;
+        pendingArtworkItems.clear();
+        playbackHandler.removeCallbacksAndMessages(null);
         mediaLibrarySession.release();
         player.release();
         super.onDestroy();
+    }
+
+    private void requestMissingArtwork(@Nullable MediaItem mediaItem) {
+        Track track = TrackMediaItem.toTrack(mediaItem);
+        if (mediaItem == null
+                || track == null
+                || isPresent(track.picUrl)
+                || !isPresent(track.picId)
+                || !pendingArtworkItems.add(mediaItem.mediaId)) {
+            return;
+        }
+
+        String mediaId = mediaItem.mediaId;
+        musicApi.getPicUrl(track, new GdMusicApi.TrackCallback() {
+            @Override
+            public void onSuccess(Track resolvedTrack) {
+                pendingArtworkItems.remove(mediaId);
+                if (destroyed || !isPresent(resolvedTrack.picUrl)) {
+                    return;
+                }
+                playbackHandler.post(() -> updateMediaItemArtwork(mediaId, resolvedTrack.picUrl));
+            }
+
+            @Override
+            public void onError(Exception error) {
+                pendingArtworkItems.remove(mediaId);
+            }
+        });
+    }
+
+    private void updateMediaItemArtwork(String mediaId, String artworkUrl) {
+        if (destroyed) {
+            return;
+        }
+        for (int index = 0; index < player.getMediaItemCount(); index++) {
+            MediaItem item = player.getMediaItemAt(index);
+            if (!mediaId.equals(item.mediaId)) {
+                continue;
+            }
+            Track track = TrackMediaItem.toTrack(item);
+            if (track == null || isPresent(track.picUrl)) {
+                return;
+            }
+            track.picUrl = artworkUrl;
+            playbackTracks.put(mediaId, track);
+            player.replaceMediaItem(index, TrackMediaItem.create(mediaId, track));
+            return;
+        }
     }
 
     private final class AutoLibraryCallback implements MediaLibrarySession.Callback {
