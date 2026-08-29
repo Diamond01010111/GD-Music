@@ -118,35 +118,6 @@ class ComposeMainActivity : ComponentActivity() {
                     }
                 }
 
-                LaunchedEffect(
-                    currentTrack?.source,
-                    currentTrack?.id,
-                    currentTrack?.picId
-                ) {
-                    val track = currentTrack ?: return@LaunchedEffect
-                    if (!track.picUrl.isNullOrBlank() && track.picUrl != "null") {
-                        artworkUrl = track.picUrl
-                        return@LaunchedEffect
-                    }
-                    val requestedKey = "${track.source}:${track.id}"
-                    api.getPicUrl(
-                        track,
-                        object : GdMusicApi.TrackCallback {
-                            override fun onSuccess(updatedTrack: Track) {
-                                runOnUiThread {
-                                    if (artworkTrackKey == requestedKey) {
-                                        artworkUrl = updatedTrack.picUrl.orEmpty()
-                                    }
-                                }
-                            }
-
-                            override fun onError(e: Exception) {
-                                // Keep the placeholder artwork for this track.
-                            }
-                        }
-                    )
-                }
-
                 DisposableEffect(controller) {
                     if (controller == null) {
                         onDispose { }

@@ -3,6 +3,7 @@ package com.diamond.gdmusic.ui.screens
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -253,6 +254,14 @@ private fun LyricsPanel(
 ) {
     val listState = rememberLazyListState()
     var manualScrollUntil by remember { mutableLongStateOf(0L) }
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+    val verticalContentPadding = with(LocalDensity.current) {
+        if (viewportHeightPx > 0) {
+            (viewportHeightPx / 2f).toDp()
+        } else {
+            64.dp
+        }
+    }
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -264,11 +273,11 @@ private fun LyricsPanel(
         }
     }
 
-    LaunchedEffect(currentIndex, manualScrollUntil, lines.size) {
+    LaunchedEffect(currentIndex, manualScrollUntil, lines.size, viewportHeightPx) {
         if (lines.isEmpty()) return@LaunchedEffect
         val remaining = manualScrollUntil - SystemClock.elapsedRealtime()
         if (remaining > 0L) delay(remaining)
-        listState.animateScrollToItem((currentIndex - LYRIC_CENTER_OFFSET).coerceAtLeast(0))
+        listState.animateScrollToCenteredItem(currentIndex)
     }
 
     Box(modifier = modifier.padding(top = 8.dp), contentAlignment = Alignment.Center) {
@@ -283,8 +292,11 @@ private fun LyricsPanel(
             lines.isEmpty() -> Text("暂无歌词")
             else -> LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().nestedScroll(nestedScrollConnection),
-                contentPadding = PaddingValues(vertical = 64.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { viewportHeightPx = it.height }
+                    .nestedScroll(nestedScrollConnection),
+                contentPadding = PaddingValues(vertical = verticalContentPadding),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -310,6 +322,20 @@ private fun LyricsPanel(
             }
         }
     }
+}
+
+private suspend fun androidx.compose.foundation.lazy.LazyListState.animateScrollToCenteredItem(
+    index: Int
+) {
+    var itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (itemInfo == null) {
+        scrollToItem(index)
+        itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    }
+    val item = itemInfo ?: return
+    val viewportCenter = layoutInfo.viewportSize.height / 2f
+    val itemCenter = item.offset + item.size / 2f
+    animateScrollBy(itemCenter - viewportCenter)
 }
 
 @Composable
@@ -528,4 +554,3 @@ private data class LyricLine(val timeMs: Long?, val text: String)
 private val LYRIC_TIMESTAMP = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
 private val LYRIC_TAG = Regex("\\[[^]]*]")
 private const val MANUAL_SCROLL_HOLD_MS = 3_000L
-private const val LYRIC_CENTER_OFFSET = 3
