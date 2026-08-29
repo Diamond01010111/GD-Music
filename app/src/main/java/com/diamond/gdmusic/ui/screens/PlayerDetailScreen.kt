@@ -333,7 +333,11 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.animateScroll
         itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
     }
     val item = itemInfo ?: return
-    val viewportCenter = layoutInfo.viewportSize.height / 2f
+    // Item offsets use LazyColumn's content coordinate system. With dynamic
+    // before/after padding its visual center is between these two offsets,
+    // rather than half of viewportSize.
+    val viewportCenter =
+        (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2f
     val itemCenter = item.offset + item.size / 2f
     animateScrollBy(itemCenter - viewportCenter)
 }
