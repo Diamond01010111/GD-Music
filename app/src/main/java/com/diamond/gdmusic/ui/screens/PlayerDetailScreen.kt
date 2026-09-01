@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,9 +51,11 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -70,6 +74,7 @@ import com.diamond.gdmusic.Track
 import com.diamond.gdmusic.ui.components.TrackMoreBottomSheet
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -101,6 +106,8 @@ fun PlayerDetailScreen(
     BackHandler(onBack = onBack)
 
     var rawLyrics by remember(track.source, track.id) { mutableStateOf("") }
+    var rawTranslatedLyrics by remember(track.source, track.id) { mutableStateOf("") }
+    var showTranslation by remember(track.source, track.id) { mutableStateOf(false) }
     var lyricSource by remember(track.source, track.id) { mutableStateOf<String?>(null) }
     var isLoadingLyrics by remember(track.source, track.id) { mutableStateOf(true) }
     var lyricError by remember(track.source, track.id) { mutableStateOf<String?>(null) }
@@ -114,15 +121,21 @@ fun PlayerDetailScreen(
         isLoadingLyrics = true
         lyricError = null
         sourceMessage = null
+        rawTranslatedLyrics = ""
         onRequestLyrics(track, preferredSource) { result ->
             if (requestSerial == lyricRequestSerial) {
                 isLoadingLyrics = false
                 result.onSuccess { resolved ->
                     rawLyrics = resolved.lyric.orEmpty()
+                    rawTranslatedLyrics = resolved.translatedLyric
+                        .orEmpty()
+                        .takeUnless { it == "null" }
+                        .orEmpty()
                     lyricSource = resolved.source
                 }
                 result.onFailure { error ->
                     rawLyrics = ""
+                    rawTranslatedLyrics = ""
                     lyricError = error.message ?: "所有来源均未找到歌词"
                 }
             }
@@ -134,6 +147,16 @@ fun PlayerDetailScreen(
     }
 
     val lyricLines = remember(rawLyrics) { parseLyrics(rawLyrics) }
+    val translatedLines = remember(rawTranslatedLyrics) {
+        parseLyrics(rawTranslatedLyrics)
+    }
+    val translations = remember(lyricLines, translatedLines) {
+        alignTranslations(lyricLines, translatedLines)
+    }
+    val hasTranslation = translations.any { !it.isNullOrBlank() }
+    LaunchedEffect(hasTranslation) {
+        if (!hasTranslation) showTranslation = false
+    }
     val currentLyricIndex = remember(lyricLines, playbackPositionMs) {
         lyricLines.indexOfLast { line ->
             line.timeMs != null && line.timeMs <= playbackPositionMs
@@ -180,6 +203,10 @@ fun PlayerDetailScreen(
 
         LyricsPanel(
             lines = lyricLines,
+            translations = translations,
+            showTranslation = showTranslation,
+            hasTranslation = hasTranslation,
+            onToggleTranslation = { showTranslation = !showTranslation },
             currentIndex = currentLyricIndex,
             isLoading = isLoadingLyrics,
             errorMessage = lyricError,
@@ -247,6 +274,10 @@ fun PlayerDetailScreen(
 @Composable
 private fun LyricsPanel(
     lines: List<LyricLine>,
+    translations: List<String?>,
+    showTranslation: Boolean,
+    hasTranslation: Boolean,
+    onToggleTranslation: () -> Unit,
     currentIndex: Int,
     isLoading: Boolean,
     errorMessage: String?,
@@ -273,10 +304,18 @@ private fun LyricsPanel(
         }
     }
 
-    LaunchedEffect(currentIndex, manualScrollUntil, lines.size, viewportHeightPx) {
+    LaunchedEffect(
+        currentIndex,
+        manualScrollUntil,
+        lines.size,
+        viewportHeightPx,
+        showTranslation,
+        translations
+    ) {
         if (lines.isEmpty()) return@LaunchedEffect
         val remaining = manualScrollUntil - SystemClock.elapsedRealtime()
         if (remaining > 0L) delay(remaining)
+        withFrameNanos { }
         listState.animateScrollToCenteredItem(currentIndex)
     }
 
@@ -302,23 +341,102 @@ private fun LyricsPanel(
             ) {
                 itemsIndexed(lines) { index, line ->
                     val active = index == currentIndex && line.timeMs != null
-                    Text(
-                        text = line.text,
-                        style = if (active) {
-                            MaterialTheme.typography.titleMedium
-                        } else {
-                            MaterialTheme.typography.bodyLarge
-                        },
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                        color = if (active) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = line.text,
+                            style = if (active) {
+                                MaterialTheme.typography.titleMedium
+                            } else {
+                                MaterialTheme.typography.bodyLarge
+                            },
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                            color = if (active) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            textAlign = TextAlign.Center
+                        )
+                        translations.getOrNull(index)
+                            ?.takeIf { showTranslation && it.isNotBlank() }
+                            ?.let { translatedText ->
+                                Text(
+                                    text = translatedText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (active) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.78f)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = 0.72f
+                                        )
+                                    },
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                    }
                 }
+            }
+        }
+
+        TranslationToggleButton(
+            enabled = hasTranslation,
+            checked = showTranslation,
+            onClick = onToggleTranslation,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+        )
+    }
+}
+
+@Composable
+private fun TranslationToggleButton(
+    enabled: Boolean,
+    checked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val iconColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+        checked -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.background(
+            color = if (checked && enabled) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
+            },
+            shape = CircleShape
+        )
+    ) {
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.Translate,
+                contentDescription = when {
+                    !enabled -> "当前歌曲没有翻译歌词"
+                    checked -> "关闭翻译歌词"
+                    else -> "打开翻译歌词"
+                },
+                tint = iconColor
+            )
+            if (!enabled) {
+                Box(
+                    Modifier
+                        .width(28.dp)
+                        .height(2.dp)
+                        .rotate(-45f)
+                        .background(iconColor, RoundedCornerShape(1.dp))
+                )
             }
         }
     }
@@ -543,6 +661,36 @@ private fun parseLyrics(rawLyrics: String): List<LyricLine> {
     )
 }
 
+private fun alignTranslations(
+    originalLines: List<LyricLine>,
+    translatedLines: List<LyricLine>
+): List<String?> {
+    if (originalLines.isEmpty() || translatedLines.isEmpty()) {
+        return List(originalLines.size) { null }
+    }
+
+    val timedTranslations = translatedLines.filter { it.timeMs != null }
+    return originalLines.mapIndexed { index, original ->
+        val originalTime = original.timeMs
+        val matched = if (originalTime != null && timedTranslations.isNotEmpty()) {
+            timedTranslations
+                .minByOrNull { translated ->
+                    abs(translated.timeMs!! - originalTime)
+                }
+                ?.takeIf { translated ->
+                    abs(translated.timeMs!! - originalTime) <=
+                        TRANSLATION_TIMESTAMP_TOLERANCE_MS
+                }
+        } else {
+            translatedLines.getOrNull(index)
+        }
+
+        matched?.text?.takeIf { translatedText ->
+            translatedText.isNotBlank() && translatedText != original.text
+        }
+    }
+}
+
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs.coerceAtLeast(0L) / 1_000L
     return String.format(
@@ -558,3 +706,4 @@ private data class LyricLine(val timeMs: Long?, val text: String)
 private val LYRIC_TIMESTAMP = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
 private val LYRIC_TAG = Regex("\\[[^]]*]")
 private const val MANUAL_SCROLL_HOLD_MS = 3_000L
+private const val TRANSLATION_TIMESTAMP_TOLERANCE_MS = 750L
