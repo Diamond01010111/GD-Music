@@ -62,6 +62,8 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private static final String NETEASE_TRACK_PREFIX = "netease_track:";
     private static final String PLAYLIST_PREFIX = "playlist:";
     private static final String TRACK_PREFIX = "track:";
+    private static final String AUTO_SEARCH_TRACK_PREFIX = "auto_search_track:";
+    private static final int AUTO_SEARCH_RESULT_COUNT = 30;
     private static final long AUDIO_URL_MAX_AGE_MS = 30L * 60L * 1000L;
     private static final long SOURCE_RESOLVE_TIMEOUT_SECONDS = 60L;
 
@@ -73,6 +75,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
     private final Map<String, NeteasePlaylist> neteasePlaylists = new LinkedHashMap<>();
     private final Map<String, List<Track>> neteaseTracks = new LinkedHashMap<>();
     private final Map<String, Track> playbackTracks = new ConcurrentHashMap<>();
+    private final Map<String, List<MediaItem>> autoSearchResults = new ConcurrentHashMap<>();
     private final Set<String> pendingArtworkItems = ConcurrentHashMap.newKeySet();
     private Handler playbackHandler;
     private volatile boolean destroyed;
@@ -143,6 +146,7 @@ public final class AutoPlaybackService extends MediaLibraryService {
     public void onDestroy() {
         destroyed = true;
         pendingArtworkItems.clear();
+        autoSearchResults.clear();
         playbackHandler.removeCallbacksAndMessages(null);
         mediaLibrarySession.release();
         player.release();
@@ -265,6 +269,75 @@ public final class AutoPlaybackService extends MediaLibraryService {
         }
 
         @Override
+        public ListenableFuture<LibraryResult<Void>> onSearch(
+                MediaLibrarySession session,
+                MediaSession.ControllerInfo browser,
+                String query,
+                @Nullable LibraryParams params
+        ) {
+            String normalizedQuery = query.trim();
+            if (normalizedQuery.isEmpty()) {
+                return Futures.immediateFuture(
+                        LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+                );
+            }
+
+            requestAutoSearch(session, browser, normalizedQuery, params);
+            return Futures.immediateFuture(LibraryResult.ofVoid());
+        }
+
+        @Override
+        public ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> onGetSearchResult(
+                MediaLibrarySession session,
+                MediaSession.ControllerInfo browser,
+                String query,
+                int page,
+                int pageSize,
+                @Nullable LibraryParams params
+        ) {
+            String normalizedQuery = query.trim();
+            if (normalizedQuery.isEmpty()) {
+                return Futures.immediateFuture(
+                        LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+                );
+            }
+
+            List<MediaItem> cached = autoSearchResults.get(normalizedQuery);
+            if (cached != null) {
+                return immediatePagedResult(cached, page, pageSize, params);
+            }
+
+            SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future =
+                    SettableFuture.create();
+            musicApi.searchTracks(
+                    normalizedQuery,
+                    "netease",
+                    AUTO_SEARCH_RESULT_COUNT,
+                    1,
+                    new GdMusicApi.SearchCallback() {
+                        @Override
+                        public void onSuccess(List<Track> tracks) {
+                            List<MediaItem> results =
+                                    autoSearchItems(normalizedQuery, tracks);
+                            autoSearchResults.put(normalizedQuery, results);
+                            future.set(pagedResult(results, page, pageSize, params));
+                        }
+
+                        @Override
+                        public void onError(Exception error) {
+                            future.set(pagedResult(
+                                    Collections.emptyList(),
+                                    page,
+                                    pageSize,
+                                    params
+                            ));
+                        }
+                    }
+            );
+            return future;
+        }
+
+        @Override
         public ListenableFuture<LibraryResult<MediaItem>> onGetItem(
                 MediaLibrarySession session,
                 MediaSession.ControllerInfo browser,
@@ -305,6 +378,68 @@ public final class AutoPlaybackService extends MediaLibraryService {
                     )
             );
         }
+    }
+
+    private void requestAutoSearch(
+            MediaLibrarySession session,
+            MediaSession.ControllerInfo browser,
+            String query,
+            @Nullable LibraryParams params
+    ) {
+        musicApi.searchTracks(
+                query,
+                "netease",
+                AUTO_SEARCH_RESULT_COUNT,
+                1,
+                new GdMusicApi.SearchCallback() {
+                    @Override
+                    public void onSuccess(List<Track> tracks) {
+                        List<MediaItem> results = autoSearchItems(query, tracks);
+                        autoSearchResults.put(query, results);
+                        if (!destroyed) {
+                            playbackHandler.post(() -> {
+                                if (!destroyed) {
+                                    session.notifySearchResultChanged(
+                                            browser,
+                                            query,
+                                            results.size(),
+                                            params
+                                    );
+                                }
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onError(Exception error) {
+                        autoSearchResults.put(query, Collections.emptyList());
+                        if (!destroyed) {
+                            playbackHandler.post(() -> {
+                                if (!destroyed) {
+                                    session.notifySearchResultChanged(
+                                            browser,
+                                            query,
+                                            0,
+                                            params
+                                    );
+                                }
+                            });
+                        }
+                    }
+                }
+        );
+    }
+
+    private List<MediaItem> autoSearchItems(String query, List<Track> tracks) {
+        List<MediaItem> items = new ArrayList<>();
+        String queryId = Integer.toHexString(query.hashCode());
+        for (int index = 0; index < tracks.size(); index++) {
+            items.add(trackItem(
+                    AUTO_SEARCH_TRACK_PREFIX + queryId + ":" + index,
+                    tracks.get(index)
+            ));
+        }
+        return items;
     }
 
     private List<MediaItem> childrenFor(String parentId) {
