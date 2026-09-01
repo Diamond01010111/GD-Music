@@ -208,7 +208,7 @@ class ComposeMainActivity : ComponentActivity() {
                     onSwitchPlayMode = ::switchPlaybackMode,
 
                     onSkipPrevious = {
-                        controllerOrWarn()?.seekToPrevious()
+                        controllerOrWarn()?.seekToPreviousMediaItem()
                     },
 
                     onSkipNext = {
